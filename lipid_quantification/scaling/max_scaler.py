@@ -13,6 +13,7 @@ class MaxScaler(BaseScaler):
 
     If a feature max is 0, divides by 1 to avoid NaNs.
     """
+
     eps: float = 1e-12
     max_: np.ndarray | None = None
 
