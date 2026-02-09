@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
+
 from .base import BaseScaler
 
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union, List
+from typing import Dict, List, Optional, Sequence, Union
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.metrics import mean_absolute_error, r2_score
 
 

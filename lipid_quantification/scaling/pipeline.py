@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
 
 from .base import BaseScaler
-from .factory import make_instrument_scaler, make_experiment_scaler
+from .factory import make_experiment_scaler, make_instrument_scaler
 
 
 @dataclass

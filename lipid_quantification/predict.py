@@ -2,7 +2,6 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-
 from lipid_quantification.metrics import regression_metrics
 
 

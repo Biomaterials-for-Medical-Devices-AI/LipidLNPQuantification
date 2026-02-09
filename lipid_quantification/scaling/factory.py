@@ -1,12 +1,14 @@
 from __future__ import annotations
+
 from typing import Optional
+
 import numpy as np
 
 from .base import BaseScaler
-from .wsor import WSoRScaler
 from .log10 import Log10Scaler
-from .sklearn_scalers import SklearnScaler
 from .max_scaler import MaxScaler
+from .sklearn_scalers import SklearnScaler
+from .wsor import WSoRScaler
 
 
 class IdentityScaler(BaseScaler):
