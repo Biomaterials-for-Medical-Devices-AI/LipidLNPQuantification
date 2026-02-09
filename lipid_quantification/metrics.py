@@ -97,8 +97,4 @@ def print_metrics(
         print(f"{name:<15} {rmse:>10.4f} {mae:>10.4f} {r2:>10.4f}")
 
     rmse_all, mae_all, r2_all = overall
-    print(
-        f"\nOverall: RMSE={rmse_all:.4f}  "
-        f"MAE={mae_all:.4f}  "
-        f"R2={r2_all:.4f}"
-    )
+    print(f"\nOverall: RMSE={rmse_all:.4f}  " f"MAE={mae_all:.4f}  " f"R2={r2_all:.4f}")

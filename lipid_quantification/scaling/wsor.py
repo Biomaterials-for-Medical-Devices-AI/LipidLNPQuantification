@@ -53,7 +53,7 @@ def loglog_interp_with_extrap(x_ref: np.ndarray, y_ref: np.ndarray):
         if np.any(right_mask):
             lyq[right_mask] = ly[-1] + right_slope * (lxq[right_mask] - lx[-1])
 
-        return 10 ** lyq
+        return 10**lyq
 
     return f
 

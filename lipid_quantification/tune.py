@@ -117,7 +117,9 @@ def train_one_trial(
 
         if va_loss < best_val - 1e-6:
             best_val = va_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
             bad_epochs = 0
         else:
             bad_epochs += 1

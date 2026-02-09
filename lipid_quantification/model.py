@@ -15,8 +15,8 @@ class LipidCompositionNetConfig:
     n_targets: int = 4
     hidden: Tuple[int, ...] = (15, 15)
     dropout: float = 0.1
-    temperature: float = 1.0          # 1.0 = standard softmax
-    total: float = 100.0              # composition sums to this
+    temperature: float = 1.0  # 1.0 = standard softmax
+    total: float = 100.0  # composition sums to this
 
 
 class LipidCompositionNet(nn.Module):
@@ -78,6 +78,7 @@ class LipidCompositionNet(nn.Module):
             outs.append(yb)
 
         return np.vstack(outs)
+
 
 # class Sum100Net(nn.Module):
 #     def __init__(

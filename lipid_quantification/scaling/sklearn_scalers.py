@@ -11,6 +11,7 @@ class SklearnScaler(BaseScaler):
     Wrap sklearn scalers with a shared BaseScaler interface.
     kind: "standard" | "minmax" | "robust"
     """
+
     kind: str
     _scaler: object = None
 

@@ -13,6 +13,7 @@ class Log10Scaler(BaseScaler):
       - "clip": clip values to eps before log
       - "raise": raise if any value <= 0
     """
+
     eps: float = 1e-12
     nonpositive: str = "clip"  # "clip" | "raise"
 

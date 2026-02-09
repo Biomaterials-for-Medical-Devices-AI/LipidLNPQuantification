@@ -62,7 +62,9 @@ class ExperimentScalerPipeline:
         X1 = self.artifacts.instrument_scaler.transform(X_train)
         return self.artifacts.train_experiment_scaler.transform(X1)
 
-    def transform_other_experiment(self, X_other: np.ndarray) -> Tuple[np.ndarray, BaseScaler]:
+    def transform_other_experiment(
+        self, X_other: np.ndarray
+    ) -> Tuple[np.ndarray, BaseScaler]:
         """
         Applies instrument correction using the fitted instrument scaler.
         Applies experiment normalization:
