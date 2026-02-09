@@ -1,0 +1,41 @@
+data:
+  train_csv: "data/raw/microarray_271225.csv"
+  test_csv: "data/raw/microarray_300126.csv"
+  curve_txt: "data/instrument/VAMAS_Instrument.txt"
+  n_targets: 4
+  dropna_test: true
+
+scaling:
+  instrument: "log10"       # wsor | log10 | none
+  experiment: "standard"     # minmax | max | robust | standard | none
+  local: true              # true = per-experiment fit
+
+
+tuning:
+  enabled: true
+  n_trials: 50
+  random_state: 42
+
+training:
+  random_state: 42
+  device: "auto"
+  test_size: 0.2
+  val_size: 0.2
+  epochs: 300
+  patience: 25
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  target_names: ["SM102", "DMGPEG", "DSPC", "Cholesterol"]
+
+plotting:
+  parity:
+    markers: ["o", "s", "^", "D"]
+    colors:
+      SM102: "#1f77b4"
+      DMGPEG: "#ff7f0e"
+      DSPC: "#2ca02c"
+      Cholesterol: "#d62728"
+
+baseline:
+  shuffle_targets: False
