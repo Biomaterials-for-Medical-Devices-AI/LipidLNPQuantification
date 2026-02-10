@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import pandas as pd
 import yaml
 
-from train_model.runner import TrainingRun, RunResult
+from lipid_quantification.train_model.runner import TrainingRun, RunResult
 
 
 def _as_list(x: Any) -> List[Any]:
