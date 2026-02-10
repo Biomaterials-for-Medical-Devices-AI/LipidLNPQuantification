@@ -6,17 +6,16 @@ data:
   dropna_test: true
 
 scaling:
-  instrument: "wsor"       # wsor | log10 | none
-  experiment: "standard"     # minmax | max | robust | standard | none
-  local: true              # true = per-experiment fit
-
+  instrument: ["wsor", "log10", "none"]
+  experiment: ["minmax", "standard", "none"]
+  local: [true, false]
 
 tuning:
   enabled: true
-  n_trials: 50
+  n_trials: 10
 
 training:
-  random_state: 42
+  random_state: [42, 43, 44, 45, 46]
   device: "auto"
   test_size: 0.2
   val_size: 0.2
@@ -27,14 +26,5 @@ training:
   weight_decay: 0.0001
   target_names: ["SM102", "DMGPEG", "DSPC", "Cholesterol"]
 
-plotting:
-  parity:
-    markers: ["o", "s", "^", "D"]
-    colors:
-      SM102: "#1f77b4"
-      DMGPEG: "#ff7f0e"
-      DSPC: "#2ca02c"
-      Cholesterol: "#d62728"
-
 baseline:
-  shuffle_targets: False
+  shuffle_targets: false
