@@ -30,7 +30,9 @@ def _basename_no_ext(p: Optional[str]) -> str:
     return Path(p).stem
 
 
-def _flatten_metrics(metrics: Dict[str, Any], target_names: List[str]) -> Dict[str, Any]:
+def _flatten_metrics(
+    metrics: Dict[str, Any], target_names: List[str]
+) -> Dict[str, Any]:
     """
     Flatten metrics dict to a single row for CSV.
 
@@ -52,7 +54,7 @@ def _flatten_metrics(metrics: Dict[str, Any], target_names: List[str]) -> Dict[s
     # Per-target rows -> wide columns
     rows = metrics.get("rows") or []
     # rows entries: (target_name, rmse, mae, r2)
-    for (name, rmse, mae, r2) in rows:
+    for name, rmse, mae, r2 in rows:
         safe = str(name).replace(" ", "_")
         out[f"rmse_{safe}"] = float(rmse)
         out[f"mae_{safe}"] = float(mae)
@@ -229,10 +231,14 @@ class Benchmark:
 
         # Write CSVs
         internal_df = pd.DataFrame(internal_rows).sort_values(
-            by=["mae_overall", "r2_overall"], ascending=[True, False], na_position="last"
+            by=["mae_overall", "r2_overall"],
+            ascending=[True, False],
+            na_position="last",
         )
         external_df = pd.DataFrame(external_rows).sort_values(
-            by=["mae_overall", "r2_overall"], ascending=[True, False], na_position="last"
+            by=["mae_overall", "r2_overall"],
+            ascending=[True, False],
+            na_position="last",
         )
 
         internal_csv = bench_dir / "internal_results.csv"

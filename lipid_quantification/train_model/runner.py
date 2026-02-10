@@ -19,7 +19,10 @@ from lipid_quantification.logging.logging import (
     save_yaml,
 )
 from lipid_quantification.evaluation.metrics import print_metrics
-from lipid_quantification.model.model import LipidCompositionNet, LipidCompositionNetConfig
+from lipid_quantification.model.model import (
+    LipidCompositionNet,
+    LipidCompositionNetConfig,
+)
 from lipid_quantification.evaluation.plotting import parity_plot, parity_plots_by_target
 from lipid_quantification.evaluation.predict import evaluate_regression
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
@@ -43,6 +46,7 @@ class ResolvedHParams:
     hidden: Tuple[int, ...]
     dropout: float
 
+
 @dataclass(frozen=True)
 class RunResult:
     run_dir: Path
@@ -51,6 +55,7 @@ class RunResult:
     best_params: Dict[str, Any]
     internal_metrics: Dict[str, Any]
     external_metrics: Optional[Dict[str, Any]]
+
 
 class TrainingRun:
     """
