@@ -6,7 +6,7 @@ data:
   dropna_test: true
 
 scaling:
-  instrument: "log10"       # wsor | log10 | none
+  instrument: "wsor"       # wsor | log10 | none
   experiment: "standard"     # minmax | max | robust | standard | none
   local: true              # true = per-experiment fit
 
@@ -14,7 +14,6 @@ scaling:
 tuning:
   enabled: true
   n_trials: 50
-  random_state: 42
 
 training:
   random_state: 42

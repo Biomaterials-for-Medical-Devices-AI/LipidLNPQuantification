@@ -8,23 +8,22 @@ import numpy as np
 import torch
 import yaml
 
-from lipid_quantification.data_utilities import make_loaders, make_splits
-from lipid_quantification.load_data import load_test_df_aligned, load_train_df
-from lipid_quantification.logging import (
-    create_run_dir,
-    get_env_meta,
-    save_json,
-    save_metrics_json,
-    save_predictions_csv,
-    save_yaml,
-)
-from lipid_quantification.metrics import print_metrics
-from lipid_quantification.model import LipidCompositionNet, LipidCompositionNetConfig
-from lipid_quantification.plotting import parity_plot, parity_plots_by_target
-from lipid_quantification.predict import evaluate_regression
+from lipid_quantification.data.data_utilities import make_loaders, make_splits
+from lipid_quantification.data.load_data import (load_test_df_aligned,
+                                                 load_train_df)
+from lipid_quantification.evaluation.metrics import print_metrics
+from lipid_quantification.evaluation.plotting import (parity_plot,
+                                                      parity_plots_by_target)
+from lipid_quantification.evaluation.predict import evaluate_regression
+from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
+                                                  save_json, save_metrics_json,
+                                                  save_predictions_csv,
+                                                  save_yaml)
+from lipid_quantification.model.model import (LipidCompositionNet,
+                                              LipidCompositionNetConfig)
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
-from lipid_quantification.train import TrainConfig, train_model
-from lipid_quantification.tune import tune_random_search
+from lipid_quantification.training.train import TrainConfig, train_model
+from lipid_quantification.training.tune import tune_random_search
 
 
 def _resolve_device(device_cfg: str) -> str:
@@ -42,6 +41,16 @@ class ResolvedHParams:
     patience: int
     hidden: Tuple[int, ...]
     dropout: float
+
+
+@dataclass(frozen=True)
+class RunResult:
+    run_dir: Path
+    device: str
+    hparams: ResolvedHParams
+    best_params: Dict[str, Any]
+    internal_metrics: Dict[str, Any]
+    external_metrics: Optional[Dict[str, Any]]
 
 
 class TrainingRun:
@@ -93,7 +102,7 @@ class TrainingRun:
     # ----------------------------
     # Public entrypoint
     # ----------------------------
-    def run(self) -> None:
+    def run(self) -> RunResult:
         self._init_run_dir_and_seeds()
         self._load_train_experiment()
         self._fit_scaling_pipeline()
@@ -101,9 +110,22 @@ class TrainingRun:
         self._maybe_tune()
         self._resolve_hparams()
         self._train_model()
-        self._evaluate_internal()
-        self._maybe_evaluate_external()
+
+        internal = self._evaluate_internal()
+        external = self._maybe_evaluate_external()
         self._maybe_shuffle_baseline()
+
+        assert self.run_dir is not None
+        assert self.hparams is not None
+
+        return RunResult(
+            run_dir=self.run_dir,
+            device=self.device,
+            hparams=self.hparams,
+            best_params=self.best_params,
+            internal_metrics=internal,
+            external_metrics=external,
+        )
 
     # ----------------------------
     # Steps
@@ -223,7 +245,7 @@ class TrainingRun:
             ),
         )
 
-    def _evaluate_internal(self) -> None:
+    def _evaluate_internal(self) -> Dict[str, Any]:
         assert self.run_dir is not None
         assert self.splits is not None
         assert self.model is not None
@@ -255,8 +277,9 @@ class TrainingRun:
             tag="internal",
             title_prefix="Internal Test",
         )
+        return metrics_test
 
-    def _maybe_evaluate_external(self) -> None:
+    def _maybe_evaluate_external(self) -> Optional[Dict[str, Any]]:
         test_csv = self.data_cfg.get("test_csv")
         if not test_csv:
             return
@@ -304,6 +327,7 @@ class TrainingRun:
             tag="external",
             title_prefix="External Test",
         )
+        return metrics_ext
 
     def _maybe_shuffle_baseline(self) -> None:
         if not self.cfg.get("baseline", {}).get("shuffle_targets", False):
