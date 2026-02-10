@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from train_model.runner import TrainingRun, load_config
+from lipid_quantification.train_model.runner import TrainingRun, load_config
 
 
 def main() -> None:
