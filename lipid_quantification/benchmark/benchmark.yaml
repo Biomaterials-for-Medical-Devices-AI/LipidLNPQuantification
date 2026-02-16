@@ -1,6 +1,6 @@
 data:
-  train_csv: "data/raw/microarray_271225.csv"
-  test_csv: "data/raw/microarray_300126.csv"
+  train_csv: "data/meassurements/raw/microarray_271225.csv"
+  test_csv: "data/meassurements/raw/microarray_300126.csv"
   curve_txt: "data/instrument/VAMAS_Instrument.txt"
   n_targets: 4
   dropna_test: true
@@ -28,3 +28,7 @@ training:
 
 baseline:
   shuffle_targets: false
+
+paths:
+  runs: benchmarks
+  benchmark: root
