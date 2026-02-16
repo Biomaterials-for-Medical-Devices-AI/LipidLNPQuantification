@@ -32,3 +32,12 @@ baseline:
 paths:
   runs: benchmarks
   benchmark: root
+
+plotting:
+  parity:
+    markers: ["o", "s", "^", "D"]
+    colors:
+      SM102: "#1f77b4"
+      DMGPEG: "#ff7f0e"
+      DSPC: "#2ca02c"
+      Cholesterol: "#d62728"
