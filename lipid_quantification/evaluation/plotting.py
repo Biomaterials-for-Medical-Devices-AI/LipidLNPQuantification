@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Union, Literal
+from typing import Dict, List, Literal, Optional, Sequence, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -53,6 +53,7 @@ def _jitter_duplicates_1d(
 
 
 ViolinMode = Literal["pred", "resid"]
+
 
 def parity_violin_binned_all_targets(
     y_true: np.ndarray,
@@ -120,7 +121,9 @@ def parity_violin_binned_all_targets(
     y_pred = np.asarray(y_pred)
 
     if y_true.shape != y_pred.shape:
-        raise ValueError(f"Shape mismatch: y_true {y_true.shape} vs y_pred {y_pred.shape}")
+        raise ValueError(
+            f"Shape mismatch: y_true {y_true.shape} vs y_pred {y_pred.shape}"
+        )
     if y_true.ndim != 2:
         raise ValueError(f"Expected 2D arrays, got y_true.ndim={y_true.ndim}")
 
@@ -155,7 +158,14 @@ def parity_violin_binned_all_targets(
     fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=300)
 
     if len(dists) == 0:
-        ax.text(0.5, 0.5, "No bins with enough data", ha="center", va="center", transform=ax.transAxes)
+        ax.text(
+            0.5,
+            0.5,
+            "No bins with enough data",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
         ax.set_axis_off()
         return fig
 
@@ -246,6 +256,7 @@ def parity_violin_binned_all_targets(
         plt.show()
 
     return fig
+
 
 def parity_violin_by_true_bins(
     y_true: np.ndarray,
@@ -347,9 +358,7 @@ def parity_violin_by_true_bins(
 
         # Overlay points
         if show_points:
-            x_pts = yt + rng.uniform(
-                -point_jitter_x, point_jitter_x, size=yt.shape
-            )
+            x_pts = yt + rng.uniform(-point_jitter_x, point_jitter_x, size=yt.shape)
 
             if mode == "pred":
                 y_pts = yp
@@ -368,7 +377,12 @@ def parity_violin_by_true_bins(
 
         # Reference line
         if mode == "pred":
-            ax.plot([min_val, max_val], [min_val, max_val], linewidth=1.2, c=c if c else "grey")
+            ax.plot(
+                [min_val, max_val],
+                [min_val, max_val],
+                linewidth=1.2,
+                c=c if c else "grey",
+            )
             ax.set_ylabel("Predicted Composition / %")
         else:
             ax.axhline(0, linewidth=1.2, c=c if c else "grey")

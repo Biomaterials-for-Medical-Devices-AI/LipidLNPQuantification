@@ -12,10 +12,9 @@ from lipid_quantification.data.data_utilities import make_loaders, make_splits
 from lipid_quantification.data.load_data import (load_test_df_aligned,
                                                  load_train_df)
 from lipid_quantification.evaluation.metrics import print_metrics
-from lipid_quantification.evaluation.plotting import (parity_plot,
-                                                      parity_violin_by_true_bins,
-                                                      parity_violin_binned_all_targets,
-                                                      parity_plots_by_target)
+from lipid_quantification.evaluation.plotting import (
+    parity_plot, parity_plots_by_target, parity_violin_binned_all_targets,
+    parity_violin_by_true_bins)
 from lipid_quantification.evaluation.predict import evaluate_regression
 from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
                                                   save_json, save_metrics_json,
@@ -438,7 +437,8 @@ class TrainingRun:
         fig.savefig(plots_dir / f"parity_{tag}_jit.png", dpi=300, bbox_inches="tight")
 
         fig = parity_violin_binned_all_targets(
-            y_true, y_pred,
+            y_true,
+            y_pred,
             title=title_prefix,
             bin_width=10,
             min_count=20,
@@ -447,10 +447,13 @@ class TrainingRun:
             show_points=True,
             point_alpha=0.06,
         )
-        fig.savefig(plots_dir / f"parity_{tag}_vio_res.png", dpi=300, bbox_inches="tight")
+        fig.savefig(
+            plots_dir / f"parity_{tag}_vio_res.png", dpi=300, bbox_inches="tight"
+        )
 
         fig = parity_violin_binned_all_targets(
-            y_true, y_pred,
+            y_true,
+            y_pred,
             title=title_prefix,
             bin_width=10,
             min_count=20,
@@ -459,8 +462,9 @@ class TrainingRun:
             show_points=True,
             point_alpha=0.06,
         )
-        fig.savefig(plots_dir / f"parity_{tag}_vio_pred.png", dpi=300, bbox_inches="tight")
-
+        fig.savefig(
+            plots_dir / f"parity_{tag}_vio_pred.png", dpi=300, bbox_inches="tight"
+        )
 
         figs = parity_violin_by_true_bins(
             y_true,
