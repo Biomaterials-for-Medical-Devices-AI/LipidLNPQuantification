@@ -519,14 +519,13 @@ def parity_plots_by_target(
             c=c,
             edgecolors="none",
         )
-        ax.plot([vmin, vmax], [vmin, vmax], linewidth=1.5)
+        ax.plot([vmin, vmax], [vmin, vmax], linewidth=1.5, c=c)
 
         ax.set_xlabel("True Composition / %")
         ax.set_ylabel("Predicted Composition / %")
 
         plot_title = f"{title_prefix} - {name}" if title_prefix else name
-        if true_jitter and true_jitter > 0:
-            plot_title = f"{plot_title} (x-jitter ±{true_jitter:g})"
+
         ax.set_title(plot_title)
 
         ax.set_xlim(vmin, vmax)
@@ -658,19 +657,12 @@ def parity_plot(
         )
 
     # Parity line
-    ax.plot([vmin, vmax], [vmin, vmax], linewidth=1.5)
+    ax.plot([vmin, vmax], [vmin, vmax], linewidth=1.5, c=c)
     ax.set_xlabel("True Composition / %")
     ax.set_ylabel("Predicted Composition / %")
 
-    # Title + optional jitter note
-    if true_jitter and true_jitter > 0:
-        plot_title = (
-            f"{title} (x-jitter ±{true_jitter:g})"
-            if title
-            else f"x-jitter ±{true_jitter:g}"
-        )
-    else:
-        plot_title = title
+    # Title
+    plot_title = title
     ax.set_title(plot_title)
 
     ax.set_xlim(vmin, vmax)
