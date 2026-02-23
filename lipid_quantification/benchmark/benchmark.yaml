@@ -1,6 +1,6 @@
 data:
-  train_csv: "data/raw/microarray_271225.csv"
-  test_csv: "data/raw/microarray_300126.csv"
+  train_csv: "data/meassurements/ion_normalised/microarray_271225.csv"
+  test_csv: "data/meassurements/ion_normalised/microarray_300126.csv"
   curve_txt: "data/instrument/VAMAS_Instrument.txt"
   n_targets: 4
   dropna_test: true
@@ -28,3 +28,16 @@ training:
 
 baseline:
   shuffle_targets: false
+
+paths:
+  runs: benchmarks
+  benchmark: root
+
+plotting:
+  parity:
+    markers: ["o", "s", "^", "D"]
+    colors:
+      SM102: "#1f77b4"
+      DMGPEG: "#ff7f0e"
+      DSPC: "#2ca02c"
+      Cholesterol: "#d62728"

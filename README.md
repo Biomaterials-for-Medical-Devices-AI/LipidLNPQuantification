@@ -9,6 +9,11 @@
 [![Lint: flake8](https://img.shields.io/badge/lint-flake8-blue.svg)](https://flake8.pycqa.org/)
 [![Status: Research](https://img.shields.io/badge/status-research-purple.svg)]()
 
+
+<p align="center">
+  <img src="static/logo.png" alt="LipidLNPQuantification logo" width="220"/>
+</p>
+
 ## Overview
 **LipidLNPQuantification** is a scientific machine-learning framework designed to **quantify lipid composition in lipid nanoparticle (LNP) mixtures** from mass-spectrometry data.
 
@@ -95,7 +100,7 @@ Designed for **high-impact journals**.
 ### Option 1 — pip (editable install)
 
 ```bash
-git clone https://github.com/<username>/LipidLNPQuantification.git
+git clone https://github.com/Biomaterials-for-Medical-Devices-AILipidLNPQuantification.git
 cd LipidLNPQuantification
 pip install -e .
 ```

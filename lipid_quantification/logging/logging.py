@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import platform
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone

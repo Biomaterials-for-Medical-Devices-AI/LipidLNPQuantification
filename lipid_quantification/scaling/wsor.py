@@ -77,9 +77,12 @@ class WSoRScaler(BaseScaler):
         if X.ndim != 2:
             raise ValueError("X must be 2D: (n_samples, n_features)")
 
+        # this loads the mean, variance table of the OrbiSIMS instrument
         mean_ref, var_ref = load_mean_variance_table(self.curve_path)
+        # this function effectively interpolates
         var_from_mean = loglog_interp_with_extrap(mean_ref, var_ref)
 
+        # calculates the mean per m/z feature
         mu = np.mean(X, axis=0)
         var_noise = var_from_mean(np.maximum(mu, mean_ref.min()))
         scale = 1.0 / np.sqrt(var_noise + self.eps)
