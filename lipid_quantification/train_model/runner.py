@@ -13,6 +13,8 @@ from lipid_quantification.data.load_data import (load_test_df_aligned,
                                                  load_train_df)
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (parity_plot,
+                                                      parity_violin_by_true_bins,
+                                                      parity_violin_binned_all_targets,
                                                       parity_plots_by_target)
 from lipid_quantification.evaluation.predict import evaluate_regression
 from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
@@ -431,34 +433,64 @@ class TrainingRun:
             markers=self.parity_markers,
             colors=self.parity_colors,
             show=False,
-        )
-        fig.savefig(plots_dir / f"parity_{tag}.png", dpi=300, bbox_inches="tight")
-
-        fig = parity_plot(
-            y_true,
-            y_pred,
-            target_names=self.training_cfg["target_names"],
-            title=title_prefix,
-            markers=self.parity_markers,
-            colors=self.parity_colors,
-            show=False,
             true_jitter=2.5,
         )
         fig.savefig(plots_dir / f"parity_{tag}_jit.png", dpi=300, bbox_inches="tight")
 
-        # Per-target (no jitter)
-        figs = parity_plots_by_target(
+        fig = parity_violin_binned_all_targets(
+            y_true, y_pred,
+            title=title_prefix,
+            bin_width=10,
+            min_count=20,
+            mode="resid",
+            color="#5fbcde",  # optional
+            show_points=True,
+            point_alpha=0.06,
+        )
+        fig.savefig(plots_dir / f"parity_{tag}_vio_res.png", dpi=300, bbox_inches="tight")
+
+        fig = parity_violin_binned_all_targets(
+            y_true, y_pred,
+            title=title_prefix,
+            bin_width=10,
+            min_count=20,
+            mode="pred",
+            color="#5fbcde",  # optional
+            show_points=True,
+            point_alpha=0.06,
+        )
+        fig.savefig(plots_dir / f"parity_{tag}_vio_pred.png", dpi=300, bbox_inches="tight")
+
+
+        figs = parity_violin_by_true_bins(
+            y_true,
+            y_pred,
+            target_names=self.training_cfg["target_names"],
+            title_prefix=title_prefix,
+            mode="resid",
+            colors=self.parity_colors,
+            alpha=0.35,
+            point_alpha=0.08,
+        )
+        for name, fig in zip(self.training_cfg["target_names"], figs):
+            fig.savefig(
+                plots_dir / f"parity_{tag}_{name}_vio_res.png",
+                dpi=300,
+                bbox_inches="tight",
+            )
+
+        figs = parity_violin_by_true_bins(
             y_true,
             y_pred,
             target_names=self.training_cfg["target_names"],
             title_prefix=title_prefix,
             colors=self.parity_colors,
-            markers=self.parity_markers,
-            show=False,
+            alpha=0.35,
+            point_alpha=0.08,
         )
         for name, fig in zip(self.training_cfg["target_names"], figs):
             fig.savefig(
-                plots_dir / f"parity_{tag}_{name}.png",
+                plots_dir / f"parity_{tag}_{name}_vio_pred.png",
                 dpi=300,
                 bbox_inches="tight",
             )
