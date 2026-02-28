@@ -145,8 +145,15 @@ class TrainingRun:
     def _load_train_experiment(self) -> None:
         self.train_df = load_train_df(self.data_cfg["train_csv"])
 
+        X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
-        self.X_train = self.train_df.iloc[:, self.n_targets :].to_numpy()
+
+        if self.model_kind =="hierarchical":
+            pass
+        elif self.model_kind == "flat":
+            self.X_train = X_df.to_numpy()
+        else:
+            raise ValueError(f"Model type not supported: {self.model_kind}")
 
     def _fit_scaling_pipeline(self) -> None:
         assert self.X_train is not None
