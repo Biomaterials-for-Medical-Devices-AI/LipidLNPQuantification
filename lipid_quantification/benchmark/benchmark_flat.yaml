@@ -1,0 +1,43 @@
+data:
+  train_csv: "datasets/meassurements/ion_normalised/microarray_271225.csv"
+  test_csv: "datasets/meassurements/ion_normalised/microarray_300126.csv"
+  curve_txt: "datasets/instrument/VAMAS_Instrument.txt"
+  n_targets: 4
+  dropna_test: true
+
+scaling:
+  instrument: ["wsor", "log10", "none"]
+  experiment: ["minmax", "standard", "none"]
+  local: [true, false]
+
+tuning:
+  enabled: true
+  n_trials: 10
+
+training:
+  random_state: [42, 43, 44, 45, 46]
+  device: "auto"
+  test_size: 0.2
+  val_size: 0.2
+  epochs: 300
+  patience: 25
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  target_names: ["SM102", "DMGPEG", "DSPC", "Cholesterol"]
+
+baseline:
+  shuffle_targets: false
+
+paths:
+  runs: benchmarks
+  benchmark: root
+
+plotting:
+  parity:
+    markers: ["o", "s", "^", "D"]
+    colors:
+      SM102: "#1f77b4"
+      DMGPEG: "#ff7f0e"
+      DSPC: "#2ca02c"
+      Cholesterol: "#d62728"
