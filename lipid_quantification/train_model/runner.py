@@ -10,19 +10,27 @@ import yaml
 
 from lipid_quantification.data.data_utilities import make_loaders
 from lipid_quantification.data.splits import make_splits
-from lipid_quantification.data.load_data import (load_test_df_aligned,
-                                                 load_train_df)
+from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (
-    parity_plot, parity_plots_by_target, parity_violin_binned_all_targets,
-    parity_violin_by_true_bins)
+    parity_plot,
+    parity_plots_by_target,
+    parity_violin_binned_all_targets,
+    parity_violin_by_true_bins,
+)
 from lipid_quantification.evaluation.predict import evaluate_regression
-from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
-                                                  save_json, save_metrics_json,
-                                                  save_predictions_csv,
-                                                  save_yaml)
-from lipid_quantification.model.model import (LipidCompositionNet,
-                                              LipidCompositionNetConfig)
+from lipid_quantification.logging.logging import (
+    create_run_dir,
+    get_env_meta,
+    save_json,
+    save_metrics_json,
+    save_predictions_csv,
+    save_yaml,
+)
+from lipid_quantification.model.model import (
+    LipidCompositionNet,
+    LipidCompositionNetConfig,
+)
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
 from lipid_quantification.training.train import TrainConfig, train_model
 from lipid_quantification.training.tune import tune_random_search
@@ -79,7 +87,7 @@ class TrainingRun:
         self.tuning_cfg = cfg.get("tuning", {})
         self.model_cfg = cfg.get("model", {}) or {}
         self.model_kind = self.model_cfg.get("kind", "flat")
-        self.leaf_features = (self.model_cfg.get("leaf_features") or {})
+        self.leaf_features = self.model_cfg.get("leaf_features") or {}
 
         self.device = _resolve_device(self.training_cfg.get("device", "auto"))
 
@@ -115,7 +123,6 @@ class TrainingRun:
         self._maybe_tune()
         self._resolve_hparams()
         self._train_model()
-
         internal = self._evaluate_internal()
         external = self._maybe_evaluate_external()
         self._maybe_shuffle_baseline()
@@ -149,7 +156,7 @@ class TrainingRun:
         X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
 
-        if self.model_kind =="hierarchical":
+        if self.model_kind == "hierarchical":
             pass
         elif self.model_kind == "flat":
             self.X_train = X_df.to_numpy()
@@ -174,7 +181,6 @@ class TrainingRun:
             )
         else:
             raise ValueError(f"Model type not supported: {self.model_kind}")
-
 
     def _make_internal_splits(self) -> None:
         assert self.X_train_scaled is not None
@@ -316,15 +322,18 @@ class TrainingRun:
         assert self.model is not None
 
         test_df = load_test_df_aligned(test_csv, self.train_df.columns)
-        if self.data_cfg.get("dropna_test", False):
+        if self.data_cfg.get("dropna_test", True):
             test_df = test_df.dropna()
 
         y_ext = test_df.iloc[:, : self.n_targets].to_numpy()
-        X_ext = test_df.iloc[:, self.n_targets :].to_numpy()
+        X_df = test_df.iloc[:, self.n_targets :]
 
-        X_ext_scaled, _exp_scaler = self.scaling_pipeline.transform_other_experiment(
-            X_ext
-        )
+        if self.model_kind == "hierarchical":
+            pass
+        elif self.model_kind == "flat":
+            X_ext = X_df.to_numpy()
+
+            X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
 
         y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
 
