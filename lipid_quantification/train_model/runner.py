@@ -7,8 +7,13 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import torch
 import yaml
+from torch.utils.data import DataLoader
 
 from lipid_quantification.data.data_utilities import make_loaders
+from lipid_quantification.data.hierarchical_dataset import (
+    LeafDictDataset,
+    leaf_dict_collate,
+)
 from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
 from lipid_quantification.data.splits import make_splits
 from lipid_quantification.evaluation.metrics import print_metrics
@@ -27,11 +32,15 @@ from lipid_quantification.logging.logging import (
     save_predictions_csv,
     save_yaml,
 )
+from lipid_quantification.model.hierarchical_config import build_hier_cfg_from_yaml
+from lipid_quantification.model.hierarchical_model import (
+    HierarchicalLipidCompositionNet,
+)
+from lipid_quantification.model.leaf_inputs import build_leaf_X
 from lipid_quantification.model.model import (
     LipidCompositionNet,
     LipidCompositionNetConfig,
 )
-from lipid_quantification.model.leaf_inputs import build_leaf_X
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
 from lipid_quantification.training.train import TrainConfig, train_model
 from lipid_quantification.training.tune import tune_random_search
@@ -225,10 +234,25 @@ class TrainingRun:
         assert self.y_train is not None
 
         if self.model_kind == "hierarchical":
-            pass
+            best, _ = tune_random_search(
+                build_model=lambda p: HierarchicalLipidCompositionNet(
+                    build_hier_cfg_from_yaml(
+                        {
+                            **self.model_cfg,
+                            "hidden": p["hidden"],
+                            "dropout": p["dropout"],
+                        }
+                    )
+                ),
+                X=self.X_train_scaled,  # dict
+                y=self.y_train,
+                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
+                random_state=int(self.tuning_cfg.get("random_state", 42)),
+                device=self.device,
+            )
 
         elif self.model_kind == "flat":
-            best, _results = tune_random_search(
+            best, _ = tune_random_search(
                 build_model=lambda p: LipidCompositionNet(
                     LipidCompositionNetConfig(
                         n_features=self.X_train_scaled.shape[1],
@@ -268,7 +292,24 @@ class TrainingRun:
         assert self.hparams is not None
 
         if self.model_kind == "hierarchical":
-            pass
+            train_ds = LeafDictDataset(self.splits.X_train, self.splits.y_train)
+            val_ds = LeafDictDataset(self.splits.X_val, self.splits.y_val)
+            train_loader = DataLoader(
+                train_ds,
+                batch_size=self.hparams.batch_size,
+                shuffle=True,
+                drop_last=False,
+                collate_fn=leaf_dict_collate,
+            )
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=self.hparams.batch_size,
+                shuffle=False,
+                drop_last=False,
+                collate_fn=leaf_dict_collate,
+            )
+            hier_cfg = build_hier_cfg_from_yaml(self.model_cfg)
+            self.model = HierarchicalLipidCompositionNet(hier_cfg)
 
         elif self.model_kind == "flat":
 
