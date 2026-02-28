@@ -49,7 +49,7 @@ plotting:
   parity:
     markers: ["o", "s", "^", "D"]
     colors:
-      SM102: "#1f77b4"
-      DMGPEG: "#ff7f0e"
-      DSPC: "#2ca02c"
-      Cholesterol: "#d62728"
+      SM102: "#1fa9a3"
+      DMGPEG: "#e46c19"
+      DSPC: "#8e73c7"
+      Cholesterol: "#5fb13d"
