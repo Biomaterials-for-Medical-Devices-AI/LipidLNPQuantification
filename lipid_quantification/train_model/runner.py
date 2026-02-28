@@ -162,12 +162,18 @@ class TrainingRun:
             instrument_name=self.scaling_cfg["instrument"],
             experiment_name=self.scaling_cfg["experiment"],
             curve_path=self.data_cfg["curve_txt"],
-            local=bool(self.scaling_cfg.get("local", True)),
-        ).fit_train_experiment(self.X_train)
-
-        self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
-            self.X_train
+            local=bool(self.scaling_cfg["local"]),
         )
+        if self.model_kind == "hierarchical":
+            pass
+        elif self.model_kind == "flat":
+            self.scaling_pipeline.fit_train_experiment(self.X_train)
+            self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
+                self.X_train
+            )
+        else:
+            raise ValueError(f"Model type not supported: {self.model_kind}")
+
 
     def _make_internal_splits(self) -> None:
         assert self.X_train_scaled is not None
