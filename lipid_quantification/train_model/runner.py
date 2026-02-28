@@ -196,23 +196,27 @@ class TrainingRun:
         assert self.X_train_scaled is not None
         assert self.y_train is not None
 
-        best, _results = tune_random_search(
-            build_model=lambda p: LipidCompositionNet(
-                LipidCompositionNetConfig(
-                    n_features=self.X_train_scaled.shape[1],
-                    n_targets=self.n_targets,
-                    hidden=p["hidden"],
-                    dropout=p["dropout"],
-                )
-            ),
-            X=self.X_train_scaled,
-            y=self.y_train,
-            n_trials=int(self.tuning_cfg.get("n_trials", 30)),
-            random_state=int(self.tuning_cfg.get("random_state", 42)),
-            device=self.device,
-        )
-        self.best_params = best["params"] or {}
+        if self.model_kind == "hierarchical":
+            pass
 
+        elif self.model_kind == "flat":
+            best, _results = tune_random_search(
+                build_model=lambda p: LipidCompositionNet(
+                    LipidCompositionNetConfig(
+                        n_features=self.X_train_scaled.shape[1],
+                        n_targets=self.n_targets,
+                        hidden=p["hidden"],
+                        dropout=p["dropout"],
+                    )
+                ),
+                X=self.X_train_scaled,
+                y=self.y_train,
+                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
+                random_state=int(self.tuning_cfg.get("random_state", 42)),
+                device=self.device,
+            )
+
+        self.best_params = best["params"] or {}
         print("\nBest hyperparameters:")
         print(self.best_params)
         print("Best validation loss:", best["val_loss"])
