@@ -9,20 +9,28 @@ import torch
 import yaml
 
 from lipid_quantification.data.data_utilities import make_loaders
-from lipid_quantification.data.load_data import (load_test_df_aligned,
-                                                 load_train_df)
+from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
 from lipid_quantification.data.splits import make_splits
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (
-    parity_plot, parity_plots_by_target, parity_violin_binned_all_targets,
-    parity_violin_by_true_bins)
+    parity_plot,
+    parity_plots_by_target,
+    parity_violin_binned_all_targets,
+    parity_violin_by_true_bins,
+)
 from lipid_quantification.evaluation.predict import evaluate_regression
-from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
-                                                  save_json, save_metrics_json,
-                                                  save_predictions_csv,
-                                                  save_yaml)
-from lipid_quantification.model.model import (LipidCompositionNet,
-                                              LipidCompositionNetConfig)
+from lipid_quantification.logging.logging import (
+    create_run_dir,
+    get_env_meta,
+    save_json,
+    save_metrics_json,
+    save_predictions_csv,
+    save_yaml,
+)
+from lipid_quantification.model.model import (
+    LipidCompositionNet,
+    LipidCompositionNetConfig,
+)
 from lipid_quantification.model.leaf_inputs import build_leaf_X
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
 from lipid_quantification.training.train import TrainConfig, train_model
@@ -150,9 +158,7 @@ class TrainingRun:
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
 
         if self.model_kind == "hierarchical":
-            self.X_train = build_leaf_X(
-                X_df, self.leaf_features
-            )
+            self.X_train = build_leaf_X(X_df, self.leaf_features)
         elif self.model_kind == "flat":
             self.X_train = X_df.to_numpy()
         else:
@@ -161,15 +167,36 @@ class TrainingRun:
     def _fit_scaling_pipeline(self) -> None:
         assert self.X_train is not None
 
-        self.scaling_pipeline = ExperimentScalerPipeline(
-            instrument_name=self.scaling_cfg["instrument"],
-            experiment_name=self.scaling_cfg["experiment"],
-            curve_path=self.data_cfg["curve_txt"],
-            local=bool(self.scaling_cfg["local"]),
-        )
         if self.model_kind == "hierarchical":
-            pass
+
+            assert isinstance(self.X_train, dict)
+
+            # create dicts to store the scalers and X_scaled values for each leaf
+            scaling_dict = {}
+            X_scaled = {}
+
+            for leaf, X_leaf in self.X_train.items():
+
+                scaling_dict[leaf] = ExperimentScalerPipeline(
+                    instrument_name=self.scaling_cfg["instrument"],
+                    experiment_name=self.scaling_cfg["experiment"],
+                    curve_path=self.data_cfg["curve_txt"],
+                    local=bool(self.scaling_cfg["local"]),
+                ).fit_train_experiment(X_leaf)
+
+                X_scaled[leaf] = scaling_dict[leaf].transform_train_experiment(X_leaf)
+
+            self.scaling_pipeline = scaling_dict
+            self.X_train_scaled = X_scaled
+
         elif self.model_kind == "flat":
+            self.scaling_pipeline = ExperimentScalerPipeline(
+                instrument_name=self.scaling_cfg["instrument"],
+                experiment_name=self.scaling_cfg["experiment"],
+                curve_path=self.data_cfg["curve_txt"],
+                local=bool(self.scaling_cfg["local"]),
+            )
+
             self.scaling_pipeline.fit_train_experiment(self.X_train)
             self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
                 self.X_train
