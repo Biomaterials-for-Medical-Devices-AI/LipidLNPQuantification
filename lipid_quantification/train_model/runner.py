@@ -76,6 +76,9 @@ class TrainingRun:
         self.scaling_cfg = cfg["scaling"]
         self.training_cfg = cfg["training"]
         self.tuning_cfg = cfg.get("tuning", {})
+        self.model_cfg = cfg.get("model", {}) or {}
+        self.model_kind = self.model_cfg.get("kind", "flat")
+        self.leaf_features = (self.model_cfg.get("leaf_features") or {})
 
         self.device = _resolve_device(self.training_cfg.get("device", "auto"))
 
