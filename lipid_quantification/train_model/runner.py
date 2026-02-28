@@ -8,7 +8,8 @@ import numpy as np
 import torch
 import yaml
 
-from lipid_quantification.data.data_utilities import make_loaders, make_splits
+from lipid_quantification.data.data_utilities import make_loaders
+from lipid_quantification.data.splits import make_splits
 from lipid_quantification.data.load_data import (load_test_df_aligned,
                                                  load_train_df)
 from lipid_quantification.evaluation.metrics import print_metrics
@@ -178,7 +179,6 @@ class TrainingRun:
     def _make_internal_splits(self) -> None:
         assert self.X_train_scaled is not None
         assert self.y_train is not None
-
         self.splits = make_splits(
             self.X_train_scaled,
             self.y_train,
