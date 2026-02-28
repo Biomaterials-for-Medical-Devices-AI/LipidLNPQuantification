@@ -230,6 +230,7 @@ class HierarchicalLipidCompositionNet(nn.Module):
             leaf_amounts[leaf] = a
 
         # 2) Aggregate to component amounts (sum subs; else direct)
+        # this checks if a component has sub components, and if it does, it adds the contributions
         comp_amount_list: list[torch.Tensor] = []
         for comp in self.cfg.components:
             subs = self.cfg.subcomponents.get(comp, ())
@@ -241,6 +242,8 @@ class HierarchicalLipidCompositionNet(nn.Module):
                 a_comp = leaf_amounts[comp]
             comp_amount_list.append(a_comp)
 
+        # transform the lists of component logits to tensor where
+        # cols are components and rows instances
         comp_amounts = torch.stack(comp_amount_list, dim=1)  # (Batch, n_components)
 
         # 3) Component softmax -> component percentages
