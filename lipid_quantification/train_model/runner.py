@@ -239,21 +239,26 @@ class TrainingRun:
         assert self.splits is not None
         assert self.hparams is not None
 
-        train_loader, val_loader, _test_loader = make_loaders(
-            self.splits,
-            batch_size=self.hparams.batch_size,
-        )
+        if self.model_kind == "hierarchical":
+            pass
 
-        self.model = LipidCompositionNet(
-            LipidCompositionNetConfig(
-                n_features=self.splits.X_train.shape[1],
-                n_targets=self.n_targets,
-                hidden=self.hparams.hidden,
-                dropout=self.hparams.dropout,
+        elif self.model_kind == "flat":
+
+            train_loader, val_loader, _test_loader = make_loaders(
+                self.splits,
+                batch_size=self.hparams.batch_size,
             )
-        )
 
-        _history = train_model(
+            self.model = LipidCompositionNet(
+                LipidCompositionNetConfig(
+                    n_features=self.splits.X_train.shape[1],
+                    n_targets=self.n_targets,
+                    hidden=self.hparams.hidden,
+                    dropout=self.hparams.dropout,
+                )
+            )
+
+        _ = train_model(
             self.model,
             train_loader,
             val_loader,
