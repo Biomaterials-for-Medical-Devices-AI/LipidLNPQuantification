@@ -1,13 +1,16 @@
-import pandas as pd
 from pathlib import Path
 from typing import List, Tuple
 
+import pandas as pd
 
-def load_train_df(path:Path, index_col:int=0) -> pd.DataFrame:
+
+def load_train_df(path: Path, index_col: int = 0) -> pd.DataFrame:
     return pd.read_csv(path, index_col=index_col)
 
 
-def load_test_df_aligned(path:Path, train_columns:List, index_col:int=0) -> pd.DataFrame:
+def load_test_df_aligned(
+    path: Path, train_columns: List, index_col: int = 0
+) -> pd.DataFrame:
     """Exactly your working line: test = test[data.columns]."""
     test = pd.read_csv(path, index_col=index_col)
     return test[train_columns]

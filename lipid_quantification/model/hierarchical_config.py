@@ -7,7 +7,9 @@ from lipid_quantification.model.hierarchical_model import (
 )
 
 
-def build_hier_cfg_from_yaml(model_cfg: Dict[str, Any]) -> HierarchicalCompositionNetConfig:
+def build_hier_cfg_from_yaml(
+    model_cfg: Dict[str, Any],
+) -> HierarchicalCompositionNetConfig:
     components = tuple(model_cfg["components"])
     sub_raw = model_cfg.get("subcomponents", {}) or {}
     subcomponents = {k: tuple(v) for k, v in sub_raw.items()}

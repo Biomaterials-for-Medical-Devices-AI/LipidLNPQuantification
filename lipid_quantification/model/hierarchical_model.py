@@ -123,7 +123,9 @@ class HierarchicalLipidCompositionNet(nn.Module):
 
         for i in range(0, n, batch_size):
             xb = {
-                k: torch.from_numpy(np.asarray(v[i : i + batch_size], dtype=np.float32)).to(dev)
+                k: torch.from_numpy(
+                    np.asarray(v[i : i + batch_size], dtype=np.float32)
+                ).to(dev)
                 for k, v in X.items()
             }
             pct, amounts, leaf_pcts = self.forward_with_details(xb)
@@ -138,7 +140,9 @@ class HierarchicalLipidCompositionNet(nn.Module):
         if not return_details:
             return comp_pcts
 
-        leaf_pcts_np = {k: np.concatenate(v, axis=0) for k, v in leaf_pcts_accum.items()}
+        leaf_pcts_np = {
+            k: np.concatenate(v, axis=0) for k, v in leaf_pcts_accum.items()
+        }
         return comp_pcts, comp_amounts, leaf_pcts_np
 
     @torch.no_grad()
@@ -174,7 +178,9 @@ class HierarchicalLipidCompositionNet(nn.Module):
 
         for i in range(0, n, batch_size):
             xb = {
-                k: torch.from_numpy(np.asarray(v[i : i + batch_size], dtype=np.float32)).to(dev)
+                k: torch.from_numpy(
+                    np.asarray(v[i : i + batch_size], dtype=np.float32)
+                ).to(dev)
                 for k, v in X.items()
             }
 
@@ -194,7 +200,9 @@ class HierarchicalLipidCompositionNet(nn.Module):
             return comp_pcts
 
         comp_amounts_np = np.vstack(comp_amounts_batches)
-        leaf_pcts_np = {k: np.concatenate(v, axis=0) for k, v in leaf_pcts_accum.items()}
+        leaf_pcts_np = {
+            k: np.concatenate(v, axis=0) for k, v in leaf_pcts_accum.items()
+        }
         return comp_pcts, comp_amounts_np, leaf_pcts_np
 
     def forward(self, X: Mapping[str, torch.Tensor]) -> torch.Tensor:
@@ -225,8 +233,8 @@ class HierarchicalLipidCompositionNet(nn.Module):
                 raise KeyError(
                     f"Missing input for leaf '{leaf}'. Provided keys: {list(X.keys())}"
                 )
-            a = net(X[leaf]).squeeze(-1)          # (Batch,)
-            a = self.nonneg(a) + self.cfg.eps    # ensure >0
+            a = net(X[leaf]).squeeze(-1)  # (Batch,)
+            a = self.nonneg(a) + self.cfg.eps  # ensure >0
             leaf_amounts[leaf] = a
 
         # 2) Aggregate to component amounts (sum subs; else direct)
@@ -257,9 +265,13 @@ class HierarchicalLipidCompositionNet(nn.Module):
         for i, comp in enumerate(self.cfg.components):
             subs = self.cfg.subcomponents.get(comp, ())
             if subs:
-                sub_amount_mat = torch.stack([leaf_amounts[s] for s in subs], dim=1)  # (B, k)
-                sub_probs = F.softmax(sub_amount_mat / self.cfg.temperature, dim=1)   # (B, k)
-                sub_pcts = comp_pct[:, i : i + 1] * sub_probs                         # (B, k)
+                sub_amount_mat = torch.stack(
+                    [leaf_amounts[s] for s in subs], dim=1
+                )  # (B, k)
+                sub_probs = F.softmax(
+                    sub_amount_mat / self.cfg.temperature, dim=1
+                )  # (B, k)
+                sub_pcts = comp_pct[:, i : i + 1] * sub_probs  # (B, k)
                 for j, s in enumerate(subs):
                     leaf_pcts[s] = sub_pcts[:, j]  # (B,)
             else:
