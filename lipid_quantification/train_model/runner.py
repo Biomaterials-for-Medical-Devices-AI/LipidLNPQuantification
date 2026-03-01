@@ -389,13 +389,19 @@ class TrainingRun:
             test_df = test_df.dropna()
 
         y_ext = test_df.iloc[:, : self.n_targets].to_numpy()
-        X_df = test_df.iloc[:, self.n_targets :]
+        X_ext_df = test_df.iloc[:, self.n_targets :]
 
         if self.model_kind == "hierarchical":
-            pass
-        elif self.model_kind == "flat":
-            X_ext = X_df.to_numpy()
 
+            X_ext_leaf = build_leaf_X(X_ext_df, self.leaf_features)
+            X_ext_scaled = {}
+            # scale each leaf by its specific trained scaler
+            for leaf, X_leaf in X_ext_leaf.items():
+                pipe_leaf = self.scaling_pipeline[leaf]
+                X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
+
+        elif self.model_kind == "flat":
+            X_ext = X_ext_df.to_numpy()
             X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
 
         y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
