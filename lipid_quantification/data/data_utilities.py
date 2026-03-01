@@ -5,7 +5,6 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -17,29 +16,6 @@ class Splits:
     y_train: np.ndarray
     y_val: np.ndarray
     y_test: np.ndarray
-
-
-def make_splits(
-    X: np.ndarray,
-    y: np.ndarray,
-    *,
-    test_size: float = 0.2,
-    val_size: float = 0.2,
-    random_state: int = 42,
-) -> Splits:
-    """Only split. No scaling, no torch."""
-    X = np.asarray(X, dtype=np.float32)
-    y = np.asarray(y, dtype=np.float32)
-
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X, y, test_size=(test_size + val_size), random_state=random_state
-    )
-    rel_test = test_size / (test_size + val_size)
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=rel_test, random_state=random_state
-    )
-
-    return Splits(X_train, X_val, X_test, y_train, y_val, y_test)
 
 
 def make_loaders(

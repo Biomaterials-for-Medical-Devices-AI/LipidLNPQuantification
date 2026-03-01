@@ -7,21 +7,40 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import torch
 import yaml
+from torch.utils.data import DataLoader
 
-from lipid_quantification.data.data_utilities import make_loaders, make_splits
-from lipid_quantification.data.load_data import (load_test_df_aligned,
-                                                 load_train_df)
+from lipid_quantification.data.data_utilities import make_loaders
+from lipid_quantification.data.hierarchical_dataset import (
+    LeafDictDataset,
+    leaf_dict_collate,
+)
+from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
+from lipid_quantification.data.splits import make_splits
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (
-    parity_plot, parity_plots_by_target, parity_violin_binned_all_targets,
-    parity_violin_by_true_bins)
+    parity_plot,
+    parity_plots_by_target,
+    parity_violin_binned_all_targets,
+    parity_violin_by_true_bins,
+)
 from lipid_quantification.evaluation.predict import evaluate_regression
-from lipid_quantification.logging.logging import (create_run_dir, get_env_meta,
-                                                  save_json, save_metrics_json,
-                                                  save_predictions_csv,
-                                                  save_yaml)
-from lipid_quantification.model.model import (LipidCompositionNet,
-                                              LipidCompositionNetConfig)
+from lipid_quantification.logging.logging import (
+    create_run_dir,
+    get_env_meta,
+    save_json,
+    save_metrics_json,
+    save_predictions_csv,
+    save_yaml,
+)
+from lipid_quantification.model.hierarchical_config import build_hier_cfg_from_yaml
+from lipid_quantification.model.hierarchical_model import (
+    HierarchicalLipidCompositionNet,
+)
+from lipid_quantification.model.leaf_inputs import build_leaf_X
+from lipid_quantification.model.model import (
+    LipidCompositionNet,
+    LipidCompositionNetConfig,
+)
 from lipid_quantification.scaling.pipeline import ExperimentScalerPipeline
 from lipid_quantification.training.train import TrainConfig, train_model
 from lipid_quantification.training.tune import tune_random_search
@@ -76,6 +95,9 @@ class TrainingRun:
         self.scaling_cfg = cfg["scaling"]
         self.training_cfg = cfg["training"]
         self.tuning_cfg = cfg.get("tuning", {})
+        self.model_cfg = cfg.get("model", {}) or {}
+        self.model_kind = self.model_cfg.get("kind", "flat")
+        self.leaf_features = self.model_cfg.get("leaf_features") or {}
 
         self.device = _resolve_device(self.training_cfg.get("device", "auto"))
 
@@ -111,7 +133,6 @@ class TrainingRun:
         self._maybe_tune()
         self._resolve_hparams()
         self._train_model()
-
         internal = self._evaluate_internal()
         external = self._maybe_evaluate_external()
         self._maybe_shuffle_baseline()
@@ -142,27 +163,59 @@ class TrainingRun:
     def _load_train_experiment(self) -> None:
         self.train_df = load_train_df(self.data_cfg["train_csv"])
 
+        X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
-        self.X_train = self.train_df.iloc[:, self.n_targets :].to_numpy()
+
+        if self.model_kind == "hierarchical":
+            self.X_train = build_leaf_X(X_df, self.leaf_features)
+        elif self.model_kind == "flat":
+            self.X_train = X_df.to_numpy()
+        else:
+            raise ValueError(f"Model type not supported: {self.model_kind}")
 
     def _fit_scaling_pipeline(self) -> None:
         assert self.X_train is not None
 
-        self.scaling_pipeline = ExperimentScalerPipeline(
-            instrument_name=self.scaling_cfg["instrument"],
-            experiment_name=self.scaling_cfg["experiment"],
-            curve_path=self.data_cfg["curve_txt"],
-            local=bool(self.scaling_cfg.get("local", True)),
-        ).fit_train_experiment(self.X_train)
+        if self.model_kind == "hierarchical":
 
-        self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
-            self.X_train
-        )
+            assert isinstance(self.X_train, dict)
+
+            # create dicts to store the scalers and X_scaled values for each leaf
+            scaling_dict = {}
+            X_scaled = {}
+
+            for leaf, X_leaf in self.X_train.items():
+
+                scaling_dict[leaf] = ExperimentScalerPipeline(
+                    instrument_name=self.scaling_cfg["instrument"],
+                    experiment_name=self.scaling_cfg["experiment"],
+                    curve_path=self.data_cfg["curve_txt"],
+                    local=bool(self.scaling_cfg["local"]),
+                ).fit_train_experiment(X_leaf)
+
+                X_scaled[leaf] = scaling_dict[leaf].transform_train_experiment(X_leaf)
+
+            self.scaling_pipeline = scaling_dict
+            self.X_train_scaled = X_scaled
+
+        elif self.model_kind == "flat":
+            self.scaling_pipeline = ExperimentScalerPipeline(
+                instrument_name=self.scaling_cfg["instrument"],
+                experiment_name=self.scaling_cfg["experiment"],
+                curve_path=self.data_cfg["curve_txt"],
+                local=bool(self.scaling_cfg["local"]),
+            )
+
+            self.scaling_pipeline.fit_train_experiment(self.X_train)
+            self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
+                self.X_train
+            )
+        else:
+            raise ValueError(f"Model type not supported: {self.model_kind}")
 
     def _make_internal_splits(self) -> None:
         assert self.X_train_scaled is not None
         assert self.y_train is not None
-
         self.splits = make_splits(
             self.X_train_scaled,
             self.y_train,
@@ -180,23 +233,42 @@ class TrainingRun:
         assert self.X_train_scaled is not None
         assert self.y_train is not None
 
-        best, _results = tune_random_search(
-            build_model=lambda p: LipidCompositionNet(
-                LipidCompositionNetConfig(
-                    n_features=self.X_train_scaled.shape[1],
-                    n_targets=self.n_targets,
-                    hidden=p["hidden"],
-                    dropout=p["dropout"],
-                )
-            ),
-            X=self.X_train_scaled,
-            y=self.y_train,
-            n_trials=int(self.tuning_cfg.get("n_trials", 30)),
-            random_state=int(self.tuning_cfg.get("random_state", 42)),
-            device=self.device,
-        )
-        self.best_params = best["params"] or {}
+        if self.model_kind == "hierarchical":
+            best, _ = tune_random_search(
+                build_model=lambda p: HierarchicalLipidCompositionNet(
+                    build_hier_cfg_from_yaml(
+                        {
+                            **self.model_cfg,
+                            "hidden": p["hidden"],
+                            "dropout": p["dropout"],
+                        }
+                    )
+                ),
+                X=self.X_train_scaled,  # dict
+                y=self.y_train,
+                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
+                random_state=int(self.tuning_cfg.get("random_state", 42)),
+                device=self.device,
+            )
 
+        elif self.model_kind == "flat":
+            best, _ = tune_random_search(
+                build_model=lambda p: LipidCompositionNet(
+                    LipidCompositionNetConfig(
+                        n_features=self.X_train_scaled.shape[1],
+                        n_targets=self.n_targets,
+                        hidden=p["hidden"],
+                        dropout=p["dropout"],
+                    )
+                ),
+                X=self.X_train_scaled,
+                y=self.y_train,
+                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
+                random_state=int(self.tuning_cfg.get("random_state", 42)),
+                device=self.device,
+            )
+
+        self.best_params = best["params"] or {}
         print("\nBest hyperparameters:")
         print(self.best_params)
         print("Best validation loss:", best["val_loss"])
@@ -219,21 +291,43 @@ class TrainingRun:
         assert self.splits is not None
         assert self.hparams is not None
 
-        train_loader, val_loader, _test_loader = make_loaders(
-            self.splits,
-            batch_size=self.hparams.batch_size,
-        )
-
-        self.model = LipidCompositionNet(
-            LipidCompositionNetConfig(
-                n_features=self.splits.X_train.shape[1],
-                n_targets=self.n_targets,
-                hidden=self.hparams.hidden,
-                dropout=self.hparams.dropout,
+        if self.model_kind == "hierarchical":
+            train_ds = LeafDictDataset(self.splits.X_train, self.splits.y_train)
+            val_ds = LeafDictDataset(self.splits.X_val, self.splits.y_val)
+            train_loader = DataLoader(
+                train_ds,
+                batch_size=self.hparams.batch_size,
+                shuffle=True,
+                drop_last=False,
+                collate_fn=leaf_dict_collate,
             )
-        )
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=self.hparams.batch_size,
+                shuffle=False,
+                drop_last=False,
+                collate_fn=leaf_dict_collate,
+            )
+            hier_cfg = build_hier_cfg_from_yaml(self.model_cfg)
+            self.model = HierarchicalLipidCompositionNet(hier_cfg)
 
-        _history = train_model(
+        elif self.model_kind == "flat":
+
+            train_loader, val_loader, _test_loader = make_loaders(
+                self.splits,
+                batch_size=self.hparams.batch_size,
+            )
+
+            self.model = LipidCompositionNet(
+                LipidCompositionNetConfig(
+                    n_features=self.splits.X_train.shape[1],
+                    n_targets=self.n_targets,
+                    hidden=self.hparams.hidden,
+                    dropout=self.hparams.dropout,
+                )
+            )
+
+        _ = train_model(
             self.model,
             train_loader,
             val_loader,
@@ -291,15 +385,24 @@ class TrainingRun:
         assert self.model is not None
 
         test_df = load_test_df_aligned(test_csv, self.train_df.columns)
-        if self.data_cfg.get("dropna_test", False):
+        if self.data_cfg.get("dropna_test", True):
             test_df = test_df.dropna()
 
         y_ext = test_df.iloc[:, : self.n_targets].to_numpy()
-        X_ext = test_df.iloc[:, self.n_targets :].to_numpy()
+        X_ext_df = test_df.iloc[:, self.n_targets :]
 
-        X_ext_scaled, _exp_scaler = self.scaling_pipeline.transform_other_experiment(
-            X_ext
-        )
+        if self.model_kind == "hierarchical":
+
+            X_ext_leaf = build_leaf_X(X_ext_df, self.leaf_features)
+            X_ext_scaled = {}
+            # scale each leaf by its specific trained scaler
+            for leaf, X_leaf in X_ext_leaf.items():
+                pipe_leaf = self.scaling_pipeline[leaf]
+                X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
+
+        elif self.model_kind == "flat":
+            X_ext = X_ext_df.to_numpy()
+            X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
 
         y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
 

@@ -208,8 +208,11 @@ Ensures:
 MIT License
 
 
-## Contact
+## Team
 
-- Eduardo Aguilar-Bejarano: eduardo.aguilar-bejarano@nottingham.ac.uk
-- Grazziela Figueredo: g.figueredo@nottingham.ac.uk
-- Morgan Alexander: morgan.alexander@nottingham.ac.uk
+**Lead Developer**
+- [Eduardo Aguilar-Bejarano](https://edaguilarb.github.io/) — eduardo.aguilar-bejarano@nottingham.ac.uk
+
+**Product Owner & Advisors**
+- Grazziela Figueredo — g.figueredo@nottingham.ac.uk
+- Morgan Alexander — morgan.alexander@nottingham.ac.uk
