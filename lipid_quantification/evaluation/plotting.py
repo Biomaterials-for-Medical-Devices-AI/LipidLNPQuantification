@@ -67,7 +67,7 @@ def parity_violin_binned_all_targets(
     color: Optional[str] = None,
     violin_alpha: float = 0.35,
     show_points: bool = True,
-    point_alpha: float = 0.08,
+    point_alpha: float = 0.15,
     point_size: float = 10.0,
     point_jitter_x: float = 0.35,
     random_state: Optional[int] = 42,
@@ -201,7 +201,7 @@ def parity_violin_binned_all_targets(
             s=point_size,
             alpha=point_alpha,
             c=(color if color is not None else "black"),
-            edgecolors="none",
+            edgecolors="black",
             rasterized=True,
         )
 
@@ -270,7 +270,7 @@ def parity_violin_by_true_bins(
     colors: Optional[Union[Sequence[str], Dict[str, str]]] = None,
     alpha: float = 0.4,
     show_points: bool = True,
-    point_alpha: float = 0.1,
+    point_alpha: float = 0.25,
     point_size: float = 10,
     point_jitter_x: float = 0.3,
     random_state: Optional[int] = 42,
@@ -371,7 +371,7 @@ def parity_violin_by_true_bins(
                 s=point_size,
                 alpha=point_alpha,
                 c=c if c is not None else "black",
-                edgecolors="none",
+                edgecolors="black",
                 rasterized=True,
             )
 
