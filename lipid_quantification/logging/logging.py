@@ -176,6 +176,7 @@ def save_predictions_csv(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     target_names: Optional[Sequence[str]] = None,
+    id_col: pd.Series | None = None,
 ) -> Path:
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
@@ -199,8 +200,11 @@ def save_predictions_csv(
         data[pcol] = y_pred[:, i]
 
     df = pd.DataFrame(data, columns=cols)
+    if id_col is not None:
+        df["ID"] = id_col
+        df = df.set_index("ID", drop=True)
     path = run_dir / "predictions" / f"predictions_{name}.csv"
-    df.to_csv(path, index=False)
+    df.to_csv(path, index=True)
     return path
 
 
