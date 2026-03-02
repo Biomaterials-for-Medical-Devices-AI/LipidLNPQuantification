@@ -360,6 +360,7 @@ class TrainingRun:
             y_true=self.splits.y_test,
             y_pred=y_test_pred,
             target_names=self.training_cfg["target_names"],
+            id_col=self.splits.idx_test
         )
 
         print_metrics(
@@ -419,6 +420,7 @@ class TrainingRun:
             y_true=y_ext,
             y_pred=y_ext_pred,
             target_names=self.training_cfg["target_names"],
+            id_col=test_df.index
         )
 
         print_metrics(
