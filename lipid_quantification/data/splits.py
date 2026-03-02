@@ -13,12 +13,15 @@ XType = Union[np.ndarray, Dict[str, np.ndarray]]
 class Splits:
     X_train: XType
     y_train: np.ndarray
+    idx_train: list
     X_val: XType
     y_val: np.ndarray
+    idx_val: list
     X_test: XType
     y_test: np.ndarray
+    idx_test: list
 
-
+#TODO: think of a way to use the user given idxs instead of saving position based idxs
 def make_splits(
     X: XType,
     y: np.ndarray,
@@ -47,8 +50,11 @@ def make_splits(
     return Splits(
         X_train=take(X, idx_train),
         y_train=y_train,
+        idx_train=idx_train,
         X_val=take(X, idx_val),
         y_val=y_val,
+        idx_val=idx_val,
         X_test=take(X, idx_test),
         y_test=y_test,
+        idx_test=idx_test,
     )
