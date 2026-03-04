@@ -1,6 +1,7 @@
 data:
   train_csv: "datasets/meassurements/ion_normalised/microarray_271225.csv"
   test_csv: "datasets/meassurements/ion_normalised/microarray_300126.csv"
+  profile_csv: "datasets/profile/ion_normalised/profile.csv"
   curve_txt: "datasets/instrument/VAMAS_Instrument.txt"
   n_targets: 4
   dropna_test: true
