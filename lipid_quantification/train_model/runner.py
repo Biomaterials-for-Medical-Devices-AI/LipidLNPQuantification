@@ -163,7 +163,7 @@ class TrainingRun:
         torch.manual_seed(int(self.training_cfg.get("random_state", 42)))
 
     def _load_train_experiment(self) -> None:
-        self.train_df = load_train_df(self.data_cfg["train_csv"])
+        self.train_df = load_train_df(self.data_cfg["train_csv"], self.data_cfg["remove_feats"])
 
         X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
