@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 from torch.utils.data import DataLoader
@@ -135,6 +136,7 @@ class TrainingRun:
         self._train_model()
         internal = self._evaluate_internal()
         external = self._maybe_evaluate_external()
+        self._maybe_predict_profile()
         self._maybe_shuffle_baseline()
 
         assert self.run_dir is not None
@@ -161,7 +163,9 @@ class TrainingRun:
         torch.manual_seed(int(self.training_cfg.get("random_state", 42)))
 
     def _load_train_experiment(self) -> None:
-        self.train_df = load_train_df(self.data_cfg["train_csv"])
+        self.train_df = load_train_df(
+            self.data_cfg["train_csv"], self.data_cfg["remove_feats"]
+        )
 
         X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
@@ -360,6 +364,7 @@ class TrainingRun:
             y_true=self.splits.y_test,
             y_pred=y_test_pred,
             target_names=self.training_cfg["target_names"],
+            id_col=self.splits.idx_test,
         )
 
         print_metrics(
@@ -419,6 +424,7 @@ class TrainingRun:
             y_true=y_ext,
             y_pred=y_ext_pred,
             target_names=self.training_cfg["target_names"],
+            id_col=test_df.index,
         )
 
         print_metrics(
@@ -432,6 +438,57 @@ class TrainingRun:
             title_prefix="External Test",
         )
         return metrics_ext
+
+    def _maybe_predict_profile(self) -> Optional[Dict[str, Any]]:
+        profile_csv = self.data_cfg.get("profile_csv")
+        if not profile_csv:
+            return
+
+        assert self.run_dir is not None
+        assert self.train_df is not None
+        assert self.scaling_pipeline is not None
+        assert self.model is not None
+
+        profile_df = load_test_df_aligned(profile_csv, self.train_df.columns)
+        if self.data_cfg.get("dropna_test", True):
+            profile_df = profile_df.dropna()
+
+        X_ext_df = profile_df.iloc[:, self.n_targets :]
+
+        if self.model_kind == "hierarchical":
+
+            X_ext_leaf = build_leaf_X(X_ext_df, self.leaf_features)
+            X_ext_scaled = {}
+            # scale each leaf by its specific trained scaler
+            for leaf, X_leaf in X_ext_leaf.items():
+                pipe_leaf = self.scaling_pipeline[leaf]
+                X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
+
+        elif self.model_kind == "flat":
+            X_ext = X_ext_df.to_numpy()
+            X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+
+        if hasattr(self.model, "predict_numpy_with_details"):
+            y_ext_pred, _, y_ext_pred_details = self.model.predict_numpy_with_details(
+                X=X_ext_scaled, device=self.device, return_details=True
+            )
+            y_ext_pred_details = pd.DataFrame(y_ext_pred_details)
+            target_names = y_ext_pred_details.columns
+            y_ext_pred = y_ext_pred_details.to_numpy()
+
+        else:
+            y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
+            target_names = self.training_cfg["target_names"]
+
+        # save_metrics_json(self.run_dir, "external_test", metrics_ext)
+        save_predictions_csv(
+            self.run_dir,
+            "profile",
+            y_true=None,
+            y_pred=y_ext_pred,
+            target_names=target_names,
+            id_col=profile_df.index,
+        )
 
     def _maybe_shuffle_baseline(self) -> None:
         if not self.cfg.get("baseline", {}).get("shuffle_targets", False):
@@ -563,7 +620,6 @@ class TrainingRun:
             mode="pred",
             color="#5fbcde",  # optional
             show_points=True,
-            point_alpha=0.06,
         )
         fig.savefig(
             plots_dir / f"parity_{tag}_vio_pred.png", dpi=300, bbox_inches="tight"
@@ -577,7 +633,6 @@ class TrainingRun:
             mode="resid",
             colors=self.parity_colors,
             alpha=0.35,
-            point_alpha=0.08,
         )
         for name, fig in zip(self.training_cfg["target_names"], figs):
             fig.savefig(
@@ -593,7 +648,6 @@ class TrainingRun:
             title_prefix=title_prefix,
             colors=self.parity_colors,
             alpha=0.35,
-            point_alpha=0.08,
         )
         for name, fig in zip(self.training_cfg["target_names"], figs):
             fig.savefig(

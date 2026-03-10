@@ -173,17 +173,33 @@ def save_metrics_json(
 def save_predictions_csv(
     run_dir: Path,
     name: str,
-    y_true: np.ndarray,
+    y_true: np.ndarray | None,
     y_pred: np.ndarray,
     target_names: Optional[Sequence[str]] = None,
+    id_col: pd.Series | None = None,
 ) -> Path:
-    y_true = np.asarray(y_true)
+    """
+    Save predictions (and optionally true values) to CSV.
+
+    If y_true is None:
+        Only prediction columns are written: pred_<target>
+    If y_true is provided:
+        Both true_<target> and pred_<target> columns are written.
+    """
     y_pred = np.asarray(y_pred)
 
-    if y_true.shape != y_pred.shape:
-        raise ValueError(f"Shape mismatch y_true={y_true.shape}, y_pred={y_pred.shape}")
+    if y_true is not None:
+        y_true = np.asarray(y_true)
+        if y_true.shape != y_pred.shape:
+            raise ValueError(
+                f"Shape mismatch y_true={y_true.shape}, y_pred={y_pred.shape}"
+            )
+        n_targets = y_true.shape[1]
+    else:
+        if y_pred.ndim != 2:
+            raise ValueError("y_pred must be 2D (N, n_targets)")
+        n_targets = y_pred.shape[1]
 
-    n_targets = y_true.shape[1]
     if target_names is None:
         target_names = [f"task_{i+1}" for i in range(n_targets)]
     if len(target_names) != n_targets:
@@ -191,16 +207,27 @@ def save_predictions_csv(
 
     cols = []
     data = {}
+
     for i, name_i in enumerate(target_names):
-        tcol = f"true_{name_i}"
+        if y_true is not None:
+            tcol = f"true_{name_i}"
+            data[tcol] = y_true[:, i]
+            cols.append(tcol)
+
         pcol = f"pred_{name_i}"
-        cols.extend([tcol, pcol])
-        data[tcol] = y_true[:, i]
         data[pcol] = y_pred[:, i]
+        cols.append(pcol)
 
     df = pd.DataFrame(data, columns=cols)
+
+    if id_col is not None:
+        df["ID"] = id_col
+        df = df.set_index("ID", drop=True)
+
     path = run_dir / "predictions" / f"predictions_{name}.csv"
-    df.to_csv(path, index=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    df.to_csv(path, index=True)
     return path
 
 
