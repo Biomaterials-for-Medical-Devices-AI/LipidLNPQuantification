@@ -1,5 +1,6 @@
 data:
   train_csv: "datasets/meassurements/ion_normalised/microarray_271225.csv"
+  remove_feats: []
   test_csv: "datasets/meassurements/ion_normalised/microarray_300126.csv"
   profile_csv: "datasets/profile/ion_normalised/profile.csv"
   curve_txt: "datasets/instrument/VAMAS_Instrument.txt"
@@ -17,11 +18,11 @@ model:
   subcomponents:
     DMGPEG: ["DMG", "PEG"]
   leaf_features:
-    SM102: [C_44H_85NO_4+, C_44H_85NO_5+, C_44H_86NO_5+, C_44H_86NO_5Na+]
-    DSPC: [C_14H_13PNO_4+, C_20H_39O_2+, C_5H_15PNO_4+, C_26H_53PNO_6+, C_44H_88NO_5+, C_44H_89PNO_8+, C_44H_88PNO_8Na+]
-    Cholesterol: [C_27H_43+, C_27H_45+, C_27H_45O+, C_27H_46ONa+]
-    DMG: [C_14H_27O_2+, C_14H_28O_2Na+, C_16H_31O_2+]
-    PEG: [C_14H_28O_6Na+, C_16H_32O_7Na+, C_18H_36O_8Na+, C_20H_40O_9Na+, C_22H_44O_10Na+, C_21H_42O_11Na+, C_31H_62O_15Na+, C_22H_44O_11Na+, C_23H_46O_12Na+, C_24H_48O_12Na+, C_25H_50O_12Na+, C_24H_48O_13Na+, C_25H_50O_13Na+, C_27H_54O_13Na+, C_27H_54O_14Na+, C_29H_58O_14Na+, C_29H_58O_15Na+, C_37H_74O_18Na+, C_37H_74O_19Na+, C_35H_70O_18Na+, C_39H_78O_19Na+, C_35H_70O_17Na+, C_39H_78O_20Na+, C_33H_66O_16Na+, C_33H_66O_17Na+, C_41H_82O_20Na+, C_31H_62O_16Na+, C_41H_82O_21Na+, C_43H_86O_21Na+, C_43H_86O_22Na+, C_45H_90O_22Na+, C_45H_90O_23Na+, C_47H_94O_23Na+, C_47H_94O_24Na+, C_49H_98O_24Na+, C_49H_98O_25Na+]
+    SM102: [C_44H_86NO_5+]
+    DSPC: [C_5H_15PNO_4+, C_20H_39O_2+]
+    Cholesterol: [C_27H_43+, C_27H_45+, C_27H_45O+]
+    DMG: [C_14H_27O_2+, C_16H_31O_2+]
+    PEG: [C_24H_48O_13Na+, C_45H_90O_22Na+]
 
 tuning:
   enabled: false
