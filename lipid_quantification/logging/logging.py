@@ -191,7 +191,9 @@ def save_predictions_csv(
     if y_true is not None:
         y_true = np.asarray(y_true)
         if y_true.shape != y_pred.shape:
-            raise ValueError(f"Shape mismatch y_true={y_true.shape}, y_pred={y_pred.shape}")
+            raise ValueError(
+                f"Shape mismatch y_true={y_true.shape}, y_pred={y_pred.shape}"
+            )
         n_targets = y_true.shape[1]
     else:
         if y_pred.ndim != 2:

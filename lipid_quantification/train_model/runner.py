@@ -163,7 +163,9 @@ class TrainingRun:
         torch.manual_seed(int(self.training_cfg.get("random_state", 42)))
 
     def _load_train_experiment(self) -> None:
-        self.train_df = load_train_df(self.data_cfg["train_csv"], self.data_cfg["remove_feats"])
+        self.train_df = load_train_df(
+            self.data_cfg["train_csv"], self.data_cfg["remove_feats"]
+        )
 
         X_df = self.train_df.iloc[:, self.n_targets :]
         self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
@@ -362,7 +364,7 @@ class TrainingRun:
             y_true=self.splits.y_test,
             y_pred=y_test_pred,
             target_names=self.training_cfg["target_names"],
-            id_col=self.splits.idx_test
+            id_col=self.splits.idx_test,
         )
 
         print_metrics(
@@ -422,7 +424,7 @@ class TrainingRun:
             y_true=y_ext,
             y_pred=y_ext_pred,
             target_names=self.training_cfg["target_names"],
-            id_col=test_df.index
+            id_col=test_df.index,
         )
 
         print_metrics(
@@ -467,7 +469,9 @@ class TrainingRun:
             X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
 
         if hasattr(self.model, "predict_numpy_with_details"):
-            y_ext_pred, _, y_ext_pred_details = self.model.predict_numpy_with_details(X=X_ext_scaled, device=self.device, return_details=True)
+            y_ext_pred, _, y_ext_pred_details = self.model.predict_numpy_with_details(
+                X=X_ext_scaled, device=self.device, return_details=True
+            )
             y_ext_pred_details = pd.DataFrame(y_ext_pred_details)
             target_names = y_ext_pred_details.columns
             y_ext_pred = y_ext_pred_details.to_numpy()
@@ -476,14 +480,14 @@ class TrainingRun:
             y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
             target_names = self.training_cfg["target_names"]
 
-        #save_metrics_json(self.run_dir, "external_test", metrics_ext)
+        # save_metrics_json(self.run_dir, "external_test", metrics_ext)
         save_predictions_csv(
             self.run_dir,
             "profile",
             y_true=None,
             y_pred=y_ext_pred,
             target_names=target_names,
-            id_col=profile_df.index
+            id_col=profile_df.index,
         )
 
     def _maybe_shuffle_baseline(self) -> None:

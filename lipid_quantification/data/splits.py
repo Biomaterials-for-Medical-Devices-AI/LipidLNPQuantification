@@ -21,7 +21,8 @@ class Splits:
     y_test: np.ndarray
     idx_test: list
 
-#TODO: think of a way to use the user given idxs instead of saving position based idxs
+
+# TODO: think of a way to use the user given idxs instead of saving position based idxs
 def make_splits(
     X: XType,
     y: np.ndarray,
