@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,7 @@ class TrainConfig:
     huber_beta: float = 1.0
     grad_clip: Optional[float] = 1.0
     device: Optional[str] = None
-
+    leaf_balance_weight: float = 0.0
 
 @dataclass
 class TrainHistory:
@@ -26,6 +26,43 @@ class TrainHistory:
     best_epoch: int
     best_val: float
 
+
+#TODO : look for a better location
+def leaf_balance_loss(
+    leaf_amounts: Dict[str, torch.Tensor],
+    subcomponents: Dict[str, Tuple[str, ...]],
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Encourage sibling leaf amounts within each parent component to be similar.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar loss.
+    """
+    penalties = []
+
+    for comp, subs in subcomponents.items():
+        if len(subs) < 2:
+            continue
+
+        # shape: (B, k)
+        sub_amounts = torch.stack([leaf_amounts[s] for s in subs], dim=1)
+
+        # mean per sample: (B, 1)
+        mean_sub = sub_amounts.mean(dim=1, keepdim=True)
+
+        # relative squared deviation from sibling mean
+        rel_sq = ((sub_amounts - mean_sub) / (mean_sub + eps)) ** 2
+
+        penalties.append(rel_sq.mean())
+
+    if not penalties:
+        # no subcomponents in model
+        return torch.tensor(0.0, device=next(iter(leaf_amounts.values())).device)
+
+    return torch.stack(penalties).mean()
 
 BatchX = Union[torch.Tensor, Mapping[str, torch.Tensor]]
 
@@ -102,9 +139,22 @@ def train_model(
                 opt.zero_grad(set_to_none=True)
 
             yhat_raw = model(xb)
-            yhat = _unwrap_model_output(yhat_raw)
 
-            loss = loss_fn(yhat, yb)
+            #TODO: this does not look elegant. We should think about a better way to deal with hierarchical and 4-component models
+            if hasattr(model, "forward_with_details"):
+                comp_pct, _comp_amounts, _leaf_pcts, leaf_amounts = model.forward_with_details(xb)
+                yhat = comp_pct
+                loss_main = loss_fn(yhat, yb)
+
+                loss_balance = leaf_balance_loss(
+                    leaf_amounts=leaf_amounts,
+                    subcomponents=model.cfg.subcomponents,
+                    eps=model.cfg.eps,
+                )
+                loss = loss_main + cfg.leaf_balance_weight * loss_balance
+            else:
+                yhat = _unwrap_model_output(yhat_raw)
+                loss = loss_fn(yhat, yb)
 
             if train:
                 loss.backward()
