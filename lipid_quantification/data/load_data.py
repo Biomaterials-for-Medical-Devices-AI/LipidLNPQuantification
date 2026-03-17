@@ -5,10 +5,28 @@ import pandas as pd
 
 
 def load_train_df(
-    path: Path, remove_feats: list | None = None, index_col: int = 0
+    path: Path,
+    use_feats: list | None = None,
+    remove_feats: list | None = None,
+    target_vars: list | None = None,
+    index_col: int = 0,
 ) -> pd.DataFrame:
     data = pd.read_csv(path, index_col=index_col)
-    data = data.drop(columns=remove_feats)
+
+    # Remove unwanted features safely
+    if remove_feats is not None:
+        data = data.drop(columns=remove_feats, errors="ignore")
+
+    # Drop rows with NaNs
+    data = data.dropna()
+
+    # Select only desired features
+    if use_feats is not None:
+        missing = [f for f in use_feats if f not in data.columns]
+        if missing:
+            raise ValueError(f"Features not found in DataFrame: {missing}")
+        data = data[target_vars + use_feats]
+
     return data
 
 
