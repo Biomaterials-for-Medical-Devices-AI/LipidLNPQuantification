@@ -19,7 +19,7 @@ class SklearnScaler(BaseScaler):
     _scaler: object = None
 
     def fit(self, X: np.ndarray, y=None) -> "SklearnScaler":
-        X = np.asarray(X, dtype=np.float32)
+        X = np.asarray(X, dtype=np.float64)
 
         if self.kind == "standard":
             self._scaler = StandardScaler()
@@ -36,5 +36,5 @@ class SklearnScaler(BaseScaler):
     def transform(self, X: np.ndarray) -> np.ndarray:
         if self._scaler is None:
             raise RuntimeError("SklearnScaler not fitted. Call fit() first.")
-        X = np.asarray(X, dtype=np.float32)
+        X = np.asarray(X, dtype=np.float64)
         return self._scaler.transform(X).astype(np.float32)
