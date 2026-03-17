@@ -229,7 +229,7 @@ class LeafSelfAttentionBlock(nn.Module):
             nn.Linear(ff_dim, embed_dim),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_weights:bool = False) -> torch.Tensor:
         """
         Apply one attention block.
 
@@ -247,7 +247,7 @@ class LeafSelfAttentionBlock(nn.Module):
         # Self-attention:
         # queries = keys = values = x
         # Therefore each leaf can attend to every other leaf.
-        attn_out, _ = self.attn(x, x, x, need_weights=False)
+        attn_out, attn_weights = self.attn(x, x, x, need_weights=return_weights, average_attn_weights=False)
 
         # Residual connection + normalization
         x = self.norm1(x + self.dropout(attn_out))
@@ -258,6 +258,8 @@ class LeafSelfAttentionBlock(nn.Module):
         # Second residual connection + normalization
         x = self.norm2(x + self.dropout(ff_out))
 
+        if return_weights:
+            return x, attn_weights
         return x
 
 
@@ -436,7 +438,7 @@ class HierarchicalLipidCompositionNet(nn.Module):
                 for k, v in X.items()
             }
 
-            pct, amounts, leaf_pcts = self.forward_with_details(xb)
+            pct, amounts, leaf_pcts, _ = self.forward_with_details(xb)
 
             comp_pcts.append(pct.cpu().numpy())
             comp_amounts.append(amounts.cpu().numpy())
@@ -551,7 +553,7 @@ class HierarchicalLipidCompositionNet(nn.Module):
         comp_pct : torch.Tensor
             Shape (B, n_components), rows sum to `cfg.total`
         """
-        comp_pct, _comp_amounts, _leaf_pcts = self.forward_with_details(X)
+        comp_pct, _comp_amounts, _leaf_pcts, _leaf_amounts = self.forward_with_details(X)
         return comp_pct
 
     def _encode_leafs(self, X: Mapping[str, torch.Tensor]) -> torch.Tensor:
@@ -588,7 +590,7 @@ class HierarchicalLipidCompositionNet(nn.Module):
         # Stack all leaf embeddings into token dimension
         return torch.stack(leaf_embeddings, dim=1)  # (B, n_leafs, embed_dim)
 
-    def _contextualize_leafs(self, leaf_tokens: torch.Tensor) -> torch.Tensor:
+    def _contextualize_leafs(self, leaf_tokens: torch.Tensor, return_weights: bool = False,) -> torch.Tensor:
         """
         Apply self-attention across leaf tokens.
 
@@ -608,7 +610,7 @@ class HierarchicalLipidCompositionNet(nn.Module):
         from other leaves. This is the mechanism by which the model can learn
         cross-leaf interactions.
         """
-        return self.leaf_attention(leaf_tokens)
+        return self.leaf_attention(leaf_tokens, return_weights)
 
     def _leaf_tokens_to_amounts(
         self, contextualized_tokens: torch.Tensor
@@ -758,4 +760,143 @@ class HierarchicalLipidCompositionNet(nn.Module):
                 # the top-level component percentage.
                 leaf_pcts[comp] = comp_pct[:, i]
 
-        return comp_pct, comp_amounts, leaf_pcts
+        return comp_pct, comp_amounts, leaf_pcts, leaf_amounts
+
+    @torch.no_grad()
+    def get_attention_matrix(
+        self,
+        X: Mapping[str, np.ndarray] | Mapping[str, torch.Tensor],
+        device: Union[str, torch.device] = "cpu",
+        aggregate_batch: bool = True,
+        aggregate_heads: bool = True,
+    ) -> np.ndarray:
+        """
+        Extract the self-attention matrix for a batch of samples.
+
+        Parameters
+        ----------
+        X
+            Mapping leaf_name -> array/tensor of shape (N, D_leaf)
+        device
+            Device for computation.
+        aggregate_batch
+            If True, average the attention matrices across the batch dimension.
+        aggregate_heads
+            If True, average the attention matrices across heads.
+
+        Returns
+        -------
+        attn : np.ndarray
+            If aggregate_batch=True and aggregate_heads=True:
+                shape (n_leafs, n_leafs)
+            If aggregate_batch=False and aggregate_heads=True:
+                shape (N, n_leafs, n_leafs)
+            If aggregate_batch=True and aggregate_heads=False:
+                shape (n_heads, n_leafs, n_leafs)
+            If aggregate_batch=False and aggregate_heads=False:
+                shape (N, n_heads, n_leafs, n_leafs)
+        """
+        self.eval()
+        dev = torch.device(device)
+        self.to(dev)
+
+        # convert inputs to tensors
+        xb = {}
+        for k, v in X.items():
+            if isinstance(v, np.ndarray):
+                xb[k] = torch.from_numpy(np.asarray(v, dtype=np.float32)).to(dev)
+            else:
+                xb[k] = v.to(dev)
+
+        # encode leafs
+        leaf_tokens = self._encode_leafs(xb)  # (B, n_leafs, embed_dim)
+
+        # run attention and keep weights
+        _, attn_weights = self._contextualize_leafs(
+            leaf_tokens,
+            return_weights=True,
+        )
+
+        # attn_weights: (B, n_heads, n_leafs, n_leafs)
+
+        attn = attn_weights.detach().cpu().numpy()
+
+        if aggregate_batch:
+            attn = attn.mean(axis=0)  # -> (n_heads, n_leafs, n_leafs)
+
+        if aggregate_heads:
+            attn = attn.mean(axis=0 if aggregate_batch else 1)
+
+        return attn
+
+    @torch.no_grad()
+    def plot_attention_matrix(
+        self,
+        X: Mapping[str, np.ndarray] | Mapping[str, torch.Tensor],
+        device: Union[str, torch.device] = "cpu",
+        figsize: tuple[float, float] = (6.0, 5.0),
+        cmap: str = "viridis",
+        aggregate_batch: bool = True,
+        aggregate_heads: bool = True,
+        annotate: bool = True,
+    ):
+        """
+        Plot the self-attention matrix.
+
+        By default:
+        - averages across the batch
+        - averages across heads
+
+        This gives a single (n_leafs x n_leafs) matrix.
+
+        Returns
+        -------
+        fig, ax, attn
+            The matplotlib figure, axis, and the plotted attention matrix.
+        """
+        import matplotlib.pyplot as plt
+
+        attn = self.get_attention_matrix(
+            X=X,
+            device=device,
+            aggregate_batch=aggregate_batch,
+            aggregate_heads=aggregate_heads,
+        )
+
+        if attn.ndim != 2:
+            raise ValueError(
+                "plot_attention_matrix expects a 2D matrix after aggregation. "
+                "Set aggregate_batch=True and aggregate_heads=True."
+            )
+
+        fig, ax = plt.subplots(figsize=figsize, dpi=300)
+
+        im = ax.imshow(attn, cmap=cmap, aspect="equal")
+
+        ax.set_xticks(range(len(self.leaf_names)))
+        ax.set_yticks(range(len(self.leaf_names)))
+        ax.set_xticklabels(self.leaf_names, rotation=45, ha="right")
+        ax.set_yticklabels(self.leaf_names)
+
+        ax.set_xlabel("Key leaf")
+        ax.set_ylabel("Query leaf")
+        ax.set_title("Mean Self-Attention Matrix")
+
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label("Attention weight")
+
+        if annotate:
+            for i in range(attn.shape[0]):
+                for j in range(attn.shape[1]):
+                    ax.text(
+                        j,
+                        i,
+                        f"{attn[i, j]:.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="white" if attn[i, j] > attn.max() * 0.5 else "black",
+                    )
+
+        plt.tight_layout()
+        return fig, ax, attn
