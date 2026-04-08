@@ -14,6 +14,52 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# =============================================================================
+# NOTE: HIERARCHICAL MODEL — UNDER DEVELOPMENT
+# =============================================================================
+# This module implements the PREFERRED hierarchical composition network with
+# cross-leaf self-attention. It is NOT currently wired into the training
+# pipeline (runner.py).
+#
+# Architecture summary
+# --------------------
+# 1. LEAF ENCODERS  — one independent MLP per leaf maps (B, D_leaf) -> (B, embed_dim)
+# 2. SELF-ATTENTION — a single Transformer block lets every leaf attend to every
+#                     other leaf, capturing cross-leaf (matrix-effect) interactions
+# 3. AMOUNT HEAD    — a shared linear layer projects each contextualized embedding
+#                     to a non-negative scalar "amount" (Softplus + eps)
+# 4. COMPONENT AGG  — subcomponent amounts are summed into parent component amounts
+# 5. COMP SOFTMAX   — component amounts are normalized into percentages (sum = total)
+# 6. SUB SOFTMAX    — for components with subcomponents, a second softmax distributes
+#                     the parent percentage among its children
+#
+# HOW TO RE-INTEGRATE:
+#   1. In runner.py, restore the imports:
+#          from lipid_quantification.model.self_attention_hierarchical import (
+#              HierarchicalLipidCompositionNet,
+#          )
+#          from lipid_quantification.model.hierarchical_config import build_hier_cfg_from_yaml
+#          from lipid_quantification.model.leaf_inputs import build_leaf_X
+#          from lipid_quantification.data.hierarchical_dataset import (
+#              LeafDictDataset,
+#              leaf_dict_collate,
+#          )
+#   2. Re-add model_kind branching in TrainingRun:
+#       - __init__: add self.model_kind and self.leaf_features from model_cfg
+#       - _load_train_experiment: use build_leaf_X(X_df, self.leaf_features)
+#       - _fit_scaling_pipeline: fit/transform one ExperimentScalerPipeline per leaf
+#       - _maybe_tune: build HierarchicalLipidCompositionNet inside tune_random_search
+#       - _train_model: use LeafDictDataset + leaf_dict_collate + build_hier_cfg_from_yaml
+#       - _maybe_evaluate_external / _maybe_predict_profile: scale per-leaf and call
+#         model.predict_numpy(X=X_ext_scaled_dict, device=...)
+#   3. YAML config must supply model.kind: hierarchical and model.leaf_features.
+#
+# ATTENTION MATRIX ANALYSIS:
+#   After training, call model.get_attention_matrix(X_dict) or
+#   model.plot_attention_matrix(X_dict) to inspect cross-leaf attention weights.
+#   This is useful for understanding which components influence each other.
+# =============================================================================
+
 
 # -----------------------------------------------------------------------------
 # Helper: per-leaf encoder
@@ -229,7 +275,7 @@ class LeafSelfAttentionBlock(nn.Module):
             nn.Linear(ff_dim, embed_dim),
         )
 
-    def forward(self, x: torch.Tensor, return_weights:bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_weights: bool = False) -> torch.Tensor:
         """
         Apply one attention block.
 
@@ -247,7 +293,9 @@ class LeafSelfAttentionBlock(nn.Module):
         # Self-attention:
         # queries = keys = values = x
         # Therefore each leaf can attend to every other leaf.
-        attn_out, attn_weights = self.attn(x, x, x, need_weights=return_weights, average_attn_weights=False)
+        attn_out, attn_weights = self.attn(
+            x, x, x, need_weights=return_weights, average_attn_weights=False
+        )
 
         # Residual connection + normalization
         x = self.norm1(x + self.dropout(attn_out))
@@ -553,7 +601,9 @@ class HierarchicalLipidCompositionNet(nn.Module):
         comp_pct : torch.Tensor
             Shape (B, n_components), rows sum to `cfg.total`
         """
-        comp_pct, _comp_amounts, _leaf_pcts, _leaf_amounts = self.forward_with_details(X)
+        comp_pct, _comp_amounts, _leaf_pcts, _leaf_amounts = self.forward_with_details(
+            X
+        )
         return comp_pct
 
     def _encode_leafs(self, X: Mapping[str, torch.Tensor]) -> torch.Tensor:
@@ -590,7 +640,11 @@ class HierarchicalLipidCompositionNet(nn.Module):
         # Stack all leaf embeddings into token dimension
         return torch.stack(leaf_embeddings, dim=1)  # (B, n_leafs, embed_dim)
 
-    def _contextualize_leafs(self, leaf_tokens: torch.Tensor, return_weights: bool = False,) -> torch.Tensor:
+    def _contextualize_leafs(
+        self,
+        leaf_tokens: torch.Tensor,
+        return_weights: bool = False,
+    ) -> torch.Tensor:
         """
         Apply self-attention across leaf tokens.
 

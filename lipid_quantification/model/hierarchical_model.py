@@ -8,6 +8,42 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# =============================================================================
+# NOTE: HIERARCHICAL MODEL — UNDER DEVELOPMENT
+# =============================================================================
+# This module implements the SIMPLER hierarchical composition network —
+# the predecessor to the self-attention version in self_attention_hierarchical.py.
+# It is NOT currently wired into the training pipeline (runner.py).
+#
+# Architecture summary
+# --------------------
+# Each leaf node runs an independent MLP that outputs a non-negative scalar
+# "amount" (via Softplus). There is NO cross-leaf interaction at this stage.
+# Component-level amounts are summed from their subcomponent amounts.
+# A softmax converts component amounts into percentages summing to `total`.
+# Subcomponents receive a share of their parent's percentage via a second softmax.
+#
+# Key difference vs self_attention_hierarchical.py
+# ------------------------------------------------
+# This model has NO attention block. Leaf representations never see each other
+# before producing their scalar outputs. The self-attention version adds a
+# Transformer-style block between encoding and scalar projection, enabling
+# cross-leaf context.
+#
+# HOW TO RE-INTEGRATE:
+#   1. In runner.py, restore the import:
+#          from lipid_quantification.model.hierarchical_model import (
+#              HierarchicalLipidCompositionNet,
+#          )
+#      NOTE: both this file and self_attention_hierarchical.py export a class
+#      named HierarchicalLipidCompositionNet — choose only ONE to import.
+#      The self-attention version is the preferred/more capable one.
+#   2. Re-add model_kind="hierarchical" branching in _maybe_tune and _train_model.
+#   3. Build the config via build_hier_cfg_from_yaml (hierarchical_config.py).
+#   4. For the DataLoader, use LeafDictDataset + leaf_dict_collate from
+#      lipid_quantification.data.hierarchical_dataset.
+# =============================================================================
+
 
 def _mlp(in_dim: int, hidden: Tuple[int, ...], dropout: float) -> nn.Sequential:
     layers: list[nn.Module] = []
