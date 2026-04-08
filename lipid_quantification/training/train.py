@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,10 @@ class TrainConfig:
     huber_beta: float = 1.0
     grad_clip: Optional[float] = 1.0
     device: Optional[str] = None
-    leaf_balance_weight: float = 0.0
+    # NOTE: when the hierarchical model is re-integrated, restore:
+    #   leaf_balance_weight: float = 0.0
+    # and import leaf_balance_loss from
+    #   lipid_quantification.model.self_attention_hierarchical
 
 
 @dataclass
@@ -28,62 +31,12 @@ class TrainHistory:
     best_val: float
 
 
-# TODO : look for a better location
-def leaf_balance_loss(
-    leaf_amounts: Dict[str, torch.Tensor],
-    subcomponents: Dict[str, Tuple[str, ...]],
-    eps: float = 1e-8,
-) -> torch.Tensor:
-    """
-    Encourage sibling leaf amounts within each parent component to be similar.
-
-    Returns
-    -------
-    torch.Tensor
-        Scalar loss.
-    """
-    penalties = []
-
-    for comp, subs in subcomponents.items():
-        if len(subs) < 2:
-            continue
-
-        # shape: (B, k)
-        sub_amounts = torch.stack([leaf_amounts[s] for s in subs], dim=1)
-
-        # mean per sample: (B, 1)
-        mean_sub = sub_amounts.mean(dim=1, keepdim=True)
-
-        # relative squared deviation from sibling mean
-        rel_sq = ((sub_amounts - mean_sub) / (mean_sub + eps)) ** 2
-
-        penalties.append(rel_sq.mean())
-
-    if not penalties:
-        # no subcomponents in model
-        return torch.tensor(0.0, device=next(iter(leaf_amounts.values())).device)
-
-    return torch.stack(penalties).mean()
+def _to_device(x: torch.Tensor, device: torch.device) -> torch.Tensor:
+    return x.to(device)
 
 
-BatchX = Union[torch.Tensor, Mapping[str, torch.Tensor]]
-
-
-def _to_device(x: BatchX, device: torch.device) -> BatchX:
-    """Move tensor OR dict-of-tensors to device."""
-    if isinstance(x, torch.Tensor):
-        return x.to(device)
-    # assume mapping leaf->tensor
-    return {k: v.to(device) for k, v in x.items()}
-
-
-def _batch_size(x: BatchX) -> int:
-    """Get batch size from tensor OR dict-of-tensors."""
-    if isinstance(x, torch.Tensor):
-        return int(x.size(0))
-    # take first leaf tensor
-    first = next(iter(x.values()))
-    return int(first.size(0))
+def _batch_size(x: torch.Tensor) -> int:
+    return int(x.size(0))
 
 
 def _unwrap_model_output(yhat: Any) -> torch.Tensor:
@@ -134,31 +87,15 @@ def train_model(
         n = 0
 
         for xb, yb in loader:
-            xb = _to_device(xb, device)  # works for tensor or dict
+            xb = _to_device(xb, device)
             yb = yb.to(device)
 
             if train:
                 opt.zero_grad(set_to_none=True)
 
             yhat_raw = model(xb)
-
-            # TODO: this does not look elegant. We should think about a better way to deal with hierarchical and 4-component models
-            if hasattr(model, "forward_with_details"):
-                comp_pct, _comp_amounts, _leaf_pcts, leaf_amounts = (
-                    model.forward_with_details(xb)
-                )
-                yhat = comp_pct
-                loss_main = loss_fn(yhat, yb)
-
-                loss_balance = leaf_balance_loss(
-                    leaf_amounts=leaf_amounts,
-                    subcomponents=model.cfg.subcomponents,
-                    eps=model.cfg.eps,
-                )
-                loss = loss_main + cfg.leaf_balance_weight * loss_balance
-            else:
-                yhat = _unwrap_model_output(yhat_raw)
-                loss = loss_fn(yhat, yb)
+            yhat = _unwrap_model_output(yhat_raw)
+            loss = loss_fn(yhat, yb)
 
             if train:
                 loss.backward()
@@ -166,7 +103,7 @@ def train_model(
                     nn.utils.clip_grad_norm_(model.parameters(), float(cfg.grad_clip))
                 opt.step()
 
-            bs = _batch_size(xb)  # works for tensor or dict
+            bs = _batch_size(xb)
             total += float(loss.item()) * bs
             n += bs
 
