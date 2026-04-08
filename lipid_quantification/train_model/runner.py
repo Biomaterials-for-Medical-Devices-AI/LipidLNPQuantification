@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from captum.attr import IntegratedGradients
 
 from lipid_quantification.data.data_utilities import make_loaders
 from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
 from lipid_quantification.data.splits import make_splits
+from lipid_quantification.evaluation.explain import save_feature_attributions
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (
     parity_plot,
@@ -416,39 +416,20 @@ class TrainingRun:
             return
 
         assert self.run_dir is not None
-        assert self.train_df is not None
-        assert self.scaling_pipeline is not None
         assert self.model is not None
 
         explanations_dir = self.run_dir / "explanations"
         explanations_dir.mkdir(exist_ok=True)
 
-        ig = IntegratedGradients(self.model.eval())
-
-        targets = self.target_names
-
-        def _calculate_attrs(X: pd.DataFrame, file_name: str):
-            cols = X.columns
-            X_np = X.to_numpy(dtype=np.float32)
-            attrs_all = pd.DataFrame()
-
-            for i, target in enumerate(targets):
-                attributions = ig.attribute(torch.from_numpy(X_np), target=i)
-                attributions = torch.Tensor.numpy(attributions)
-                feats_target = [f"{target}_{feat}" for feat in cols]
-                attrs = pd.DataFrame(attributions, columns=feats_target)
-                attrs_all = pd.concat([attrs_all, attrs], axis=1)
-
-            attrs_all.to_csv(explanations_dir / file_name)
-
         X_train_df = self.normalised_train_df.iloc[:, self.n_targets :]
-        _calculate_attrs(X_train_df, file_name="train.csv")
+        save_feature_attributions(self.model, X_train_df, self.target_names, explanations_dir / "train.csv")
+
         if test_csv:
             X_ext_df = self.normalised_test_df.iloc[:, self.n_targets :]
-            _calculate_attrs(X_ext_df, file_name="test.csv")
+            save_feature_attributions(self.model, X_ext_df, self.target_names, explanations_dir / "test.csv")
+
         if profile_csv:
-            X_profile_df = self.normalised_profile_df
-            _calculate_attrs(X_profile_df, file_name="profile.csv")
+            save_feature_attributions(self.model, self.normalised_profile_df, self.target_names, explanations_dir / "profile.csv")
 
     def _maybe_shuffle_baseline(self) -> None:
         if not self.cfg.get("baseline", {}).get("shuffle_targets", False):
