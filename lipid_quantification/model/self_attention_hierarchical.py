@@ -954,3 +954,77 @@ class HierarchicalLipidCompositionNet(nn.Module):
 
         plt.tight_layout()
         return fig, ax, attn
+
+
+# =============================================================================
+# Companion training loss for HierarchicalLipidCompositionNet
+# =============================================================================
+# RE-INTEGRATION NOTE:
+#   When wiring the hierarchical model back into runner.py, import this function
+#   in `lipid_quantification/training/train.py` and call it inside `run_epoch`
+#   after `model.forward_with_details(xb)` returns `leaf_amounts`.
+#   Example usage in run_epoch:
+#       loss = loss_main + cfg.leaf_balance_weight * leaf_balance_loss(
+#           leaf_amounts=leaf_amounts,
+#           subcomponents=model.cfg.subcomponents,
+#           eps=model.cfg.eps,
+#       )
+#   Also restore `leaf_balance_weight: float = 0.0` in TrainConfig.
+# =============================================================================
+
+def leaf_balance_loss(
+    leaf_amounts: Dict[str, torch.Tensor],
+    subcomponents: Dict[str, Tuple[str, ...]],
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Encourage sibling leaf amounts within each parent component to be similar.
+
+    Purpose
+    -------
+    Acts as a regulariser during hierarchical model training. For each parent
+    component that has subcomponents, it penalises large relative differences
+    between the scalar amounts predicted for sibling leaves. This prevents
+    the model from collapsing all weight onto a single subcomponent.
+
+    Parameters
+    ----------
+    leaf_amounts
+        Mapping from leaf name to tensor of shape (B,) — the non-negative scalar
+        amounts output by `forward_with_details`. Comes directly from the 4th
+        return value of `HierarchicalLipidCompositionNet.forward_with_details`.
+    subcomponents
+        Mapping from parent component name to tuple of its subcomponent names.
+        Should be `model.cfg.subcomponents`.
+    eps
+        Small constant for numerical stability in the relative deviation.
+        Should be `model.cfg.eps`.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar loss (mean relative squared deviation across all parent components
+        and batch elements).
+    """
+    penalties = []
+
+    for comp, subs in subcomponents.items():
+        if len(subs) < 2:
+            continue
+
+        # shape: (B, k)
+        sub_amounts = torch.stack([leaf_amounts[s] for s in subs], dim=1)
+
+        # mean per sample: (B, 1)
+        mean_sub = sub_amounts.mean(dim=1, keepdim=True)
+
+        # relative squared deviation from sibling mean
+        rel_sq = ((sub_amounts - mean_sub) / (mean_sub + eps)) ** 2
+
+        penalties.append(rel_sq.mean())
+
+    if not penalties:
+        # no subcomponents with >= 2 leaves — loss is zero
+        return torch.tensor(0.0, device=next(iter(leaf_amounts.values())).device)
+
+    return torch.stack(penalties).mean()
