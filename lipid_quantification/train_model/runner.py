@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from captum.attr import IntegratedGradients
 import numpy as np
 import pandas as pd
 import torch
@@ -34,7 +35,7 @@ from lipid_quantification.logging.logging import (
     save_yaml,
 )
 from lipid_quantification.model.hierarchical_config import build_hier_cfg_from_yaml
-from lipid_quantification.model.hierarchical_model import (
+from lipid_quantification.model.self_attention_hierarchical import (
     HierarchicalLipidCompositionNet,
 )
 from lipid_quantification.model.leaf_inputs import build_leaf_X
@@ -106,7 +107,7 @@ class TrainingRun:
         self.scaling_pipeline: Optional[ExperimentScalerPipeline] = None
 
         self.train_df = None
-        self.n_targets = int(self.data_cfg.get("n_targets", 4))
+        self.n_targets = int(len(self.data_cfg["target_variables"]))
 
         self.X_train: Optional[np.ndarray] = None
         self.y_train: Optional[np.ndarray] = None
@@ -123,6 +124,9 @@ class TrainingRun:
         self.parity_markers = plot_cfg.get("markers")
         self.parity_colors = plot_cfg.get("colors")
 
+        if self.model_kind != "flat":
+            raise ValueError("Currently, only the flat model is suported.")
+
     # ----------------------------
     # Public entrypoint
     # ----------------------------
@@ -137,6 +141,7 @@ class TrainingRun:
         internal = self._evaluate_internal()
         external = self._maybe_evaluate_external()
         self._maybe_predict_profile()
+        self._maybe_explain()
         self._maybe_shuffle_baseline()
 
         assert self.run_dir is not None
@@ -164,15 +169,22 @@ class TrainingRun:
 
     def _load_train_experiment(self) -> None:
         self.train_df = load_train_df(
-            self.data_cfg["train_csv"], self.data_cfg["remove_feats"]
+            path=self.data_cfg["train_csv"],
+            use_feats=self.data_cfg["features"],
+            remove_feats=self.data_cfg["remove_feats"],
+            target_vars=self.data_cfg["target_variables"],
         )
 
         X_df = self.train_df.iloc[:, self.n_targets :]
-        self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
+        y = self.train_df.iloc[:, : self.n_targets]
+        self.target_names = y.columns
+        self.y_train = y.to_numpy()
 
+        #TODO: Check all the conditional of model types and fix it to have a more modular-scalable code.
         if self.model_kind == "hierarchical":
             self.X_train = build_leaf_X(X_df, self.leaf_features)
         elif self.model_kind == "flat":
+            self.train_cols = X_df.columns
             self.X_train = X_df.to_numpy()
         else:
             raise ValueError(f"Model type not supported: {self.model_kind}")
@@ -209,11 +221,20 @@ class TrainingRun:
                 curve_path=self.data_cfg["curve_txt"],
                 local=bool(self.scaling_cfg["local"]),
             )
-
             self.scaling_pipeline.fit_train_experiment(self.X_train)
             self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
                 self.X_train
             )
+            self.normalised_data_path = self.run_dir / "normalised_datasets"
+            self.normalised_data_path.mkdir(exist_ok=True)
+            X_train_scaled_df = pd.DataFrame(
+                self.X_train_scaled, columns=self.train_cols
+            )
+            y = pd.DataFrame(self.y_train, columns=self.target_names)
+            scaled_df = pd.concat([y, X_train_scaled_df], axis=1)
+            # scaled_df.index = self.train_df.index
+            scaled_df.to_csv(self.normalised_data_path / "train.csv")
+            self.normalised_train_df = scaled_df
         else:
             raise ValueError(f"Model type not supported: {self.model_kind}")
 
@@ -354,7 +375,7 @@ class TrainingRun:
         metrics_test = evaluate_regression(
             self.splits.y_test,
             y_test_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         save_metrics_json(self.run_dir, "internal_test", metrics_test)
@@ -363,7 +384,7 @@ class TrainingRun:
             "internal_test",
             y_true=self.splits.y_test,
             y_pred=y_test_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             id_col=self.splits.idx_test,
         )
 
@@ -406,15 +427,20 @@ class TrainingRun:
                 X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
 
         elif self.model_kind == "flat":
+            X_ext_cols = X_ext_df.columns
             X_ext = X_ext_df.to_numpy()
             X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+            X_ext_scaled_df = pd.DataFrame(X_ext_scaled, columns=X_ext_cols)
+            test_df.iloc[:, self.n_targets :] = X_ext_scaled_df
+            test_df.to_csv(self.normalised_data_path / "test.csv")
+            self.normalised_test_df = test_df
 
         y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
 
         metrics_ext = evaluate_regression(
             y_true=y_ext,
             y_pred=y_ext_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         save_metrics_json(self.run_dir, "external_test", metrics_ext)
@@ -423,7 +449,7 @@ class TrainingRun:
             "external_test",
             y_true=y_ext,
             y_pred=y_ext_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             id_col=test_df.index,
         )
 
@@ -454,6 +480,7 @@ class TrainingRun:
             profile_df = profile_df.dropna()
 
         X_ext_df = profile_df.iloc[:, self.n_targets :]
+        cols = X_ext_df.columns
 
         if self.model_kind == "hierarchical":
 
@@ -467,6 +494,9 @@ class TrainingRun:
         elif self.model_kind == "flat":
             X_ext = X_ext_df.to_numpy()
             X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+            X_ext_scaled_df = pd.DataFrame(X_ext_scaled, columns=cols)
+            X_ext_scaled_df.to_csv(self.normalised_data_path / "profile.csv")
+            self.normalised_profile_df = X_ext_scaled_df
 
         if hasattr(self.model, "predict_numpy_with_details"):
             y_ext_pred, _, y_ext_pred_details = self.model.predict_numpy_with_details(
@@ -478,7 +508,7 @@ class TrainingRun:
 
         else:
             y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
-            target_names = self.training_cfg["target_names"]
+            target_names = self.target_names
 
         # save_metrics_json(self.run_dir, "external_test", metrics_ext)
         save_predictions_csv(
@@ -489,6 +519,48 @@ class TrainingRun:
             target_names=target_names,
             id_col=profile_df.index,
         )
+
+    def _maybe_explain(self) -> None:
+        test_csv = self.data_cfg.get("test_csv")
+        profile_csv = self.data_cfg.get("profile_csv")
+        if not test_csv and not profile_csv:
+            return
+
+        assert self.run_dir is not None
+        assert self.train_df is not None
+        assert self.scaling_pipeline is not None
+        assert self.model is not None
+
+        explanations_dir = self.run_dir / "explanations"
+        explanations_dir.mkdir(exist_ok=True)
+
+        ig = IntegratedGradients(self.model.eval())
+
+        targets = self.target_names
+
+        def _calculate_attrs(X: pd.DataFrame, file_name:str):
+            cols = X.columns
+            X_np = X.to_numpy(dtype=np.float32)
+            attrs_all = pd.DataFrame()
+
+            for i, target in enumerate(targets):
+                attributions = ig.attribute(torch.from_numpy(X_np), target=i)
+                attributions = torch.Tensor.numpy(attributions)
+                feats_target = [f"{target}_{feat}" for feat in cols]
+                attrs = pd.DataFrame(attributions, columns=feats_target)
+                attrs_all = pd.concat([attrs_all, attrs], axis=1)
+
+            attrs_all.to_csv(explanations_dir / file_name)
+
+        X_train_df = self.normalised_train_df.iloc[:, self.n_targets:]
+        _calculate_attrs(X_train_df, file_name="train.csv")
+        if test_csv:
+            X_ext_df = self.normalised_test_df.iloc[:, self.n_targets:]
+            _calculate_attrs(X_ext_df, file_name="test.csv")
+        if profile_csv:
+            X_profile_df = self.normalised_profile_df
+            _calculate_attrs(X_profile_df, file_name="profile.csv")
+
 
     def _maybe_shuffle_baseline(self) -> None:
         if not self.cfg.get("baseline", {}).get("shuffle_targets", False):
@@ -545,7 +617,7 @@ class TrainingRun:
         metrics_shuf = evaluate_regression(
             self.splits.y_test,
             y_test_pred_random,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         print_metrics(
@@ -555,7 +627,7 @@ class TrainingRun:
         parity_plot(
             self.splits.y_test,
             y_test_pred_random,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title="Shuffle Baseline (Internal Test)",
             show=True,
         )
@@ -587,7 +659,7 @@ class TrainingRun:
         fig = parity_plot(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title=title_prefix,
             markers=self.parity_markers,
             colors=self.parity_colors,
@@ -628,13 +700,13 @@ class TrainingRun:
         figs = parity_violin_by_true_bins(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             mode="resid",
             colors=self.parity_colors,
             alpha=0.35,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_vio_res.png",
                 dpi=300,
@@ -644,12 +716,12 @@ class TrainingRun:
         figs = parity_violin_by_true_bins(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             colors=self.parity_colors,
             alpha=0.35,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_vio_pred.png",
                 dpi=300,
@@ -660,14 +732,14 @@ class TrainingRun:
         figs = parity_plots_by_target(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             colors=self.parity_colors,
             markers=self.parity_markers,
             show=False,
             true_jitter=2.5,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_jit.png",
                 dpi=300,
