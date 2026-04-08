@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Union, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -19,6 +19,7 @@ class TrainConfig:
     device: Optional[str] = None
     leaf_balance_weight: float = 0.0
 
+
 @dataclass
 class TrainHistory:
     train_loss: List[float]
@@ -27,7 +28,7 @@ class TrainHistory:
     best_val: float
 
 
-#TODO : look for a better location
+# TODO : look for a better location
 def leaf_balance_loss(
     leaf_amounts: Dict[str, torch.Tensor],
     subcomponents: Dict[str, Tuple[str, ...]],
@@ -63,6 +64,7 @@ def leaf_balance_loss(
         return torch.tensor(0.0, device=next(iter(leaf_amounts.values())).device)
 
     return torch.stack(penalties).mean()
+
 
 BatchX = Union[torch.Tensor, Mapping[str, torch.Tensor]]
 
@@ -140,9 +142,11 @@ def train_model(
 
             yhat_raw = model(xb)
 
-            #TODO: this does not look elegant. We should think about a better way to deal with hierarchical and 4-component models
+            # TODO: this does not look elegant. We should think about a better way to deal with hierarchical and 4-component models
             if hasattr(model, "forward_with_details"):
-                comp_pct, _comp_amounts, _leaf_pcts, leaf_amounts = model.forward_with_details(xb)
+                comp_pct, _comp_amounts, _leaf_pcts, leaf_amounts = (
+                    model.forward_with_details(xb)
+                )
                 yhat = comp_pct
                 loss_main = loss_fn(yhat, yb)
 
