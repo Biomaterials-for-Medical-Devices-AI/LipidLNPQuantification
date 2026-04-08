@@ -8,15 +8,11 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
-from torch.utils.data import DataLoader
 
 from lipid_quantification.data.data_utilities import make_loaders
-from lipid_quantification.data.hierarchical_dataset import (
-    LeafDictDataset,
-    leaf_dict_collate,
-)
 from lipid_quantification.data.load_data import load_test_df_aligned, load_train_df
 from lipid_quantification.data.splits import make_splits
+from lipid_quantification.evaluation.explain import save_feature_attributions
 from lipid_quantification.evaluation.metrics import print_metrics
 from lipid_quantification.evaluation.plotting import (
     parity_plot,
@@ -33,11 +29,6 @@ from lipid_quantification.logging.logging import (
     save_predictions_csv,
     save_yaml,
 )
-from lipid_quantification.model.hierarchical_config import build_hier_cfg_from_yaml
-from lipid_quantification.model.hierarchical_model import (
-    HierarchicalLipidCompositionNet,
-)
-from lipid_quantification.model.leaf_inputs import build_leaf_X
 from lipid_quantification.model.model import (
     LipidCompositionNet,
     LipidCompositionNetConfig,
@@ -97,8 +88,6 @@ class TrainingRun:
         self.training_cfg = cfg["training"]
         self.tuning_cfg = cfg.get("tuning", {})
         self.model_cfg = cfg.get("model", {}) or {}
-        self.model_kind = self.model_cfg.get("kind", "flat")
-        self.leaf_features = self.model_cfg.get("leaf_features") or {}
 
         self.device = _resolve_device(self.training_cfg.get("device", "auto"))
 
@@ -106,7 +95,7 @@ class TrainingRun:
         self.scaling_pipeline: Optional[ExperimentScalerPipeline] = None
 
         self.train_df = None
-        self.n_targets = int(self.data_cfg.get("n_targets", 4))
+        self.n_targets = int(len(self.data_cfg["target_variables"]))
 
         self.X_train: Optional[np.ndarray] = None
         self.y_train: Optional[np.ndarray] = None
@@ -137,6 +126,7 @@ class TrainingRun:
         internal = self._evaluate_internal()
         external = self._maybe_evaluate_external()
         self._maybe_predict_profile()
+        self._maybe_explain()
         self._maybe_shuffle_baseline()
 
         assert self.run_dir is not None
@@ -164,58 +154,40 @@ class TrainingRun:
 
     def _load_train_experiment(self) -> None:
         self.train_df = load_train_df(
-            self.data_cfg["train_csv"], self.data_cfg["remove_feats"]
+            path=self.data_cfg["train_csv"],
+            use_feats=self.data_cfg["features"],
+            remove_feats=self.data_cfg["remove_feats"],
+            target_vars=self.data_cfg["target_variables"],
         )
 
         X_df = self.train_df.iloc[:, self.n_targets :]
-        self.y_train = self.train_df.iloc[:, : self.n_targets].to_numpy()
+        y = self.train_df.iloc[:, : self.n_targets]
+        self.target_names = y.columns
+        self.y_train = y.to_numpy()
 
-        if self.model_kind == "hierarchical":
-            self.X_train = build_leaf_X(X_df, self.leaf_features)
-        elif self.model_kind == "flat":
-            self.X_train = X_df.to_numpy()
-        else:
-            raise ValueError(f"Model type not supported: {self.model_kind}")
+        self.train_cols = X_df.columns
+        self.X_train = X_df.to_numpy()
 
     def _fit_scaling_pipeline(self) -> None:
         assert self.X_train is not None
 
-        if self.model_kind == "hierarchical":
-
-            assert isinstance(self.X_train, dict)
-
-            # create dicts to store the scalers and X_scaled values for each leaf
-            scaling_dict = {}
-            X_scaled = {}
-
-            for leaf, X_leaf in self.X_train.items():
-
-                scaling_dict[leaf] = ExperimentScalerPipeline(
-                    instrument_name=self.scaling_cfg["instrument"],
-                    experiment_name=self.scaling_cfg["experiment"],
-                    curve_path=self.data_cfg["curve_txt"],
-                    local=bool(self.scaling_cfg["local"]),
-                ).fit_train_experiment(X_leaf)
-
-                X_scaled[leaf] = scaling_dict[leaf].transform_train_experiment(X_leaf)
-
-            self.scaling_pipeline = scaling_dict
-            self.X_train_scaled = X_scaled
-
-        elif self.model_kind == "flat":
-            self.scaling_pipeline = ExperimentScalerPipeline(
-                instrument_name=self.scaling_cfg["instrument"],
-                experiment_name=self.scaling_cfg["experiment"],
-                curve_path=self.data_cfg["curve_txt"],
-                local=bool(self.scaling_cfg["local"]),
-            )
-
-            self.scaling_pipeline.fit_train_experiment(self.X_train)
-            self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
-                self.X_train
-            )
-        else:
-            raise ValueError(f"Model type not supported: {self.model_kind}")
+        self.scaling_pipeline = ExperimentScalerPipeline(
+            instrument_name=self.scaling_cfg["instrument"],
+            experiment_name=self.scaling_cfg["experiment"],
+            curve_path=self.data_cfg["curve_txt"],
+            local=bool(self.scaling_cfg["local"]),
+        )
+        self.scaling_pipeline.fit_train_experiment(self.X_train)
+        self.X_train_scaled = self.scaling_pipeline.transform_train_experiment(
+            self.X_train
+        )
+        self.normalised_data_path = self.run_dir / "normalised_datasets"
+        self.normalised_data_path.mkdir(exist_ok=True)
+        X_train_scaled_df = pd.DataFrame(self.X_train_scaled, columns=self.train_cols)
+        y = pd.DataFrame(self.y_train, columns=self.target_names)
+        scaled_df = pd.concat([y, X_train_scaled_df], axis=1)
+        scaled_df.to_csv(self.normalised_data_path / "train.csv")
+        self.normalised_train_df = scaled_df
 
     def _make_internal_splits(self) -> None:
         assert self.X_train_scaled is not None
@@ -237,40 +209,21 @@ class TrainingRun:
         assert self.X_train_scaled is not None
         assert self.y_train is not None
 
-        if self.model_kind == "hierarchical":
-            best, _ = tune_random_search(
-                build_model=lambda p: HierarchicalLipidCompositionNet(
-                    build_hier_cfg_from_yaml(
-                        {
-                            **self.model_cfg,
-                            "hidden": p["hidden"],
-                            "dropout": p["dropout"],
-                        }
-                    )
-                ),
-                X=self.X_train_scaled,  # dict
-                y=self.y_train,
-                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
-                random_state=int(self.tuning_cfg.get("random_state", 42)),
-                device=self.device,
-            )
-
-        elif self.model_kind == "flat":
-            best, _ = tune_random_search(
-                build_model=lambda p: LipidCompositionNet(
-                    LipidCompositionNetConfig(
-                        n_features=self.X_train_scaled.shape[1],
-                        n_targets=self.n_targets,
-                        hidden=p["hidden"],
-                        dropout=p["dropout"],
-                    )
-                ),
-                X=self.X_train_scaled,
-                y=self.y_train,
-                n_trials=int(self.tuning_cfg.get("n_trials", 30)),
-                random_state=int(self.tuning_cfg.get("random_state", 42)),
-                device=self.device,
-            )
+        best, _ = tune_random_search(
+            build_model=lambda p: LipidCompositionNet(
+                LipidCompositionNetConfig(
+                    n_features=self.X_train_scaled.shape[1],
+                    n_targets=self.n_targets,
+                    hidden=p["hidden"],
+                    dropout=p["dropout"],
+                )
+            ),
+            X=self.X_train_scaled,
+            y=self.y_train,
+            n_trials=int(self.tuning_cfg.get("n_trials", 30)),
+            random_state=int(self.tuning_cfg.get("random_state", 42)),
+            device=self.device,
+        )
 
         self.best_params = best["params"] or {}
         print("\nBest hyperparameters:")
@@ -295,41 +248,19 @@ class TrainingRun:
         assert self.splits is not None
         assert self.hparams is not None
 
-        if self.model_kind == "hierarchical":
-            train_ds = LeafDictDataset(self.splits.X_train, self.splits.y_train)
-            val_ds = LeafDictDataset(self.splits.X_val, self.splits.y_val)
-            train_loader = DataLoader(
-                train_ds,
-                batch_size=self.hparams.batch_size,
-                shuffle=True,
-                drop_last=False,
-                collate_fn=leaf_dict_collate,
-            )
-            val_loader = DataLoader(
-                val_ds,
-                batch_size=self.hparams.batch_size,
-                shuffle=False,
-                drop_last=False,
-                collate_fn=leaf_dict_collate,
-            )
-            hier_cfg = build_hier_cfg_from_yaml(self.model_cfg)
-            self.model = HierarchicalLipidCompositionNet(hier_cfg)
+        train_loader, val_loader, _test_loader = make_loaders(
+            self.splits,
+            batch_size=self.hparams.batch_size,
+        )
 
-        elif self.model_kind == "flat":
-
-            train_loader, val_loader, _test_loader = make_loaders(
-                self.splits,
-                batch_size=self.hparams.batch_size,
+        self.model = LipidCompositionNet(
+            LipidCompositionNetConfig(
+                n_features=self.splits.X_train.shape[1],
+                n_targets=self.n_targets,
+                hidden=self.hparams.hidden,
+                dropout=self.hparams.dropout,
             )
-
-            self.model = LipidCompositionNet(
-                LipidCompositionNetConfig(
-                    n_features=self.splits.X_train.shape[1],
-                    n_targets=self.n_targets,
-                    hidden=self.hparams.hidden,
-                    dropout=self.hparams.dropout,
-                )
-            )
+        )
 
         _ = train_model(
             self.model,
@@ -354,7 +285,7 @@ class TrainingRun:
         metrics_test = evaluate_regression(
             self.splits.y_test,
             y_test_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         save_metrics_json(self.run_dir, "internal_test", metrics_test)
@@ -363,7 +294,7 @@ class TrainingRun:
             "internal_test",
             y_true=self.splits.y_test,
             y_pred=y_test_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             id_col=self.splits.idx_test,
         )
 
@@ -396,25 +327,20 @@ class TrainingRun:
         y_ext = test_df.iloc[:, : self.n_targets].to_numpy()
         X_ext_df = test_df.iloc[:, self.n_targets :]
 
-        if self.model_kind == "hierarchical":
-
-            X_ext_leaf = build_leaf_X(X_ext_df, self.leaf_features)
-            X_ext_scaled = {}
-            # scale each leaf by its specific trained scaler
-            for leaf, X_leaf in X_ext_leaf.items():
-                pipe_leaf = self.scaling_pipeline[leaf]
-                X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
-
-        elif self.model_kind == "flat":
-            X_ext = X_ext_df.to_numpy()
-            X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+        X_ext_cols = X_ext_df.columns
+        X_ext = X_ext_df.to_numpy()
+        X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+        X_ext_scaled_df = pd.DataFrame(X_ext_scaled, columns=X_ext_cols)
+        test_df.iloc[:, self.n_targets :] = X_ext_scaled_df
+        test_df.to_csv(self.normalised_data_path / "test.csv")
+        self.normalised_test_df = test_df
 
         y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
 
         metrics_ext = evaluate_regression(
             y_true=y_ext,
             y_pred=y_ext_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         save_metrics_json(self.run_dir, "external_test", metrics_ext)
@@ -423,7 +349,7 @@ class TrainingRun:
             "external_test",
             y_true=y_ext,
             y_pred=y_ext_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             id_col=test_df.index,
         )
 
@@ -454,19 +380,13 @@ class TrainingRun:
             profile_df = profile_df.dropna()
 
         X_ext_df = profile_df.iloc[:, self.n_targets :]
+        cols = X_ext_df.columns
 
-        if self.model_kind == "hierarchical":
-
-            X_ext_leaf = build_leaf_X(X_ext_df, self.leaf_features)
-            X_ext_scaled = {}
-            # scale each leaf by its specific trained scaler
-            for leaf, X_leaf in X_ext_leaf.items():
-                pipe_leaf = self.scaling_pipeline[leaf]
-                X_ext_scaled[leaf], _ = pipe_leaf.transform_other_experiment(X_leaf)
-
-        elif self.model_kind == "flat":
-            X_ext = X_ext_df.to_numpy()
-            X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+        X_ext = X_ext_df.to_numpy()
+        X_ext_scaled, _ = self.scaling_pipeline.transform_other_experiment(X_ext)
+        X_ext_scaled_df = pd.DataFrame(X_ext_scaled, columns=cols)
+        X_ext_scaled_df.to_csv(self.normalised_data_path / "profile.csv")
+        self.normalised_profile_df = X_ext_scaled_df
 
         if hasattr(self.model, "predict_numpy_with_details"):
             y_ext_pred, _, y_ext_pred_details = self.model.predict_numpy_with_details(
@@ -478,9 +398,8 @@ class TrainingRun:
 
         else:
             y_ext_pred = self.model.predict_numpy(X=X_ext_scaled, device=self.device)
-            target_names = self.training_cfg["target_names"]
+            target_names = self.target_names
 
-        # save_metrics_json(self.run_dir, "external_test", metrics_ext)
         save_predictions_csv(
             self.run_dir,
             "profile",
@@ -489,6 +408,28 @@ class TrainingRun:
             target_names=target_names,
             id_col=profile_df.index,
         )
+
+    def _maybe_explain(self) -> None:
+        test_csv = self.data_cfg.get("test_csv")
+        profile_csv = self.data_cfg.get("profile_csv")
+        if not test_csv and not profile_csv:
+            return
+
+        assert self.run_dir is not None
+        assert self.model is not None
+
+        explanations_dir = self.run_dir / "explanations"
+        explanations_dir.mkdir(exist_ok=True)
+
+        X_train_df = self.normalised_train_df.iloc[:, self.n_targets :]
+        save_feature_attributions(self.model, X_train_df, self.target_names, explanations_dir / "train.csv")
+
+        if test_csv:
+            X_ext_df = self.normalised_test_df.iloc[:, self.n_targets :]
+            save_feature_attributions(self.model, X_ext_df, self.target_names, explanations_dir / "test.csv")
+
+        if profile_csv:
+            save_feature_attributions(self.model, self.normalised_profile_df, self.target_names, explanations_dir / "profile.csv")
 
     def _maybe_shuffle_baseline(self) -> None:
         if not self.cfg.get("baseline", {}).get("shuffle_targets", False):
@@ -545,7 +486,7 @@ class TrainingRun:
         metrics_shuf = evaluate_regression(
             self.splits.y_test,
             y_test_pred_random,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
         )
 
         print_metrics(
@@ -555,7 +496,7 @@ class TrainingRun:
         parity_plot(
             self.splits.y_test,
             y_test_pred_random,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title="Shuffle Baseline (Internal Test)",
             show=True,
         )
@@ -587,7 +528,7 @@ class TrainingRun:
         fig = parity_plot(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title=title_prefix,
             markers=self.parity_markers,
             colors=self.parity_colors,
@@ -628,13 +569,13 @@ class TrainingRun:
         figs = parity_violin_by_true_bins(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             mode="resid",
             colors=self.parity_colors,
             alpha=0.35,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_vio_res.png",
                 dpi=300,
@@ -644,12 +585,12 @@ class TrainingRun:
         figs = parity_violin_by_true_bins(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             colors=self.parity_colors,
             alpha=0.35,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_vio_pred.png",
                 dpi=300,
@@ -660,14 +601,14 @@ class TrainingRun:
         figs = parity_plots_by_target(
             y_true,
             y_pred,
-            target_names=self.training_cfg["target_names"],
+            target_names=self.target_names,
             title_prefix=title_prefix,
             colors=self.parity_colors,
             markers=self.parity_markers,
             show=False,
             true_jitter=2.5,
         )
-        for name, fig in zip(self.training_cfg["target_names"], figs):
+        for name, fig in zip(self.target_names, figs):
             fig.savefig(
                 plots_dir / f"parity_{tag}_{name}_jit.png",
                 dpi=300,

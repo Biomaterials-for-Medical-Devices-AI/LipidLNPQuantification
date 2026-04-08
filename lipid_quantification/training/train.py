@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -17,6 +17,10 @@ class TrainConfig:
     huber_beta: float = 1.0
     grad_clip: Optional[float] = 1.0
     device: Optional[str] = None
+    # NOTE: when the hierarchical model is re-integrated, restore:
+    #   leaf_balance_weight: float = 0.0
+    # and import leaf_balance_loss from
+    #   lipid_quantification.model.self_attention_hierarchical
 
 
 @dataclass
@@ -27,24 +31,12 @@ class TrainHistory:
     best_val: float
 
 
-BatchX = Union[torch.Tensor, Mapping[str, torch.Tensor]]
+def _to_device(x: torch.Tensor, device: torch.device) -> torch.Tensor:
+    return x.to(device)
 
 
-def _to_device(x: BatchX, device: torch.device) -> BatchX:
-    """Move tensor OR dict-of-tensors to device."""
-    if isinstance(x, torch.Tensor):
-        return x.to(device)
-    # assume mapping leaf->tensor
-    return {k: v.to(device) for k, v in x.items()}
-
-
-def _batch_size(x: BatchX) -> int:
-    """Get batch size from tensor OR dict-of-tensors."""
-    if isinstance(x, torch.Tensor):
-        return int(x.size(0))
-    # take first leaf tensor
-    first = next(iter(x.values()))
-    return int(first.size(0))
+def _batch_size(x: torch.Tensor) -> int:
+    return int(x.size(0))
 
 
 def _unwrap_model_output(yhat: Any) -> torch.Tensor:
@@ -95,7 +87,7 @@ def train_model(
         n = 0
 
         for xb, yb in loader:
-            xb = _to_device(xb, device)  # works for tensor or dict
+            xb = _to_device(xb, device)
             yb = yb.to(device)
 
             if train:
@@ -103,7 +95,6 @@ def train_model(
 
             yhat_raw = model(xb)
             yhat = _unwrap_model_output(yhat_raw)
-
             loss = loss_fn(yhat, yb)
 
             if train:
@@ -112,7 +103,7 @@ def train_model(
                     nn.utils.clip_grad_norm_(model.parameters(), float(cfg.grad_clip))
                 opt.step()
 
-            bs = _batch_size(xb)  # works for tensor or dict
+            bs = _batch_size(xb)
             total += float(loss.item()) * bs
             n += bs
 

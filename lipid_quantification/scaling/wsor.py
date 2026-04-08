@@ -61,9 +61,76 @@ def loglog_interp_with_extrap(x_ref: np.ndarray, y_ref: np.ndarray):
 @dataclass
 class WSoRScaler(BaseScaler):
     """
-    WSoR scaling using instrument mean->variance curve.
+    Weighted Scaling based on Orbitrap Resolution (WSoR-inspired scaler).
 
-    After fit, transform scales each feature by 1/sqrt(var_noise(mu_feature)).
+    This scaler implements a heteroscedastic noise normalization strategy
+    inspired by the WSoR method described in:
+
+        Keenan et al., "Orbitrap noise structure and method for noise unbiased
+        multivariate analysis", Nature Communications (2025).
+
+    The key idea of WSoR is that Orbitrap mass spectrometry data exhibit
+    heteroscedastic noise: the variance of a peak depends on its signal
+    intensity. If untreated, this causes high-intensity ions to dominate
+    multivariate analyses such as PCA or machine learning models.
+
+    WSoR corrects this bias by scaling each feature according to the
+    expected instrument noise variance associated with its signal level.
+
+    This implementation estimates the expected noise variance for each
+    feature using an empirical instrument calibration curve that maps
+    mean signal intensity to variance:
+
+        variance = f(mean)
+
+    The scaling applied during transformation is therefore:
+
+        X_scaled[:, j] = X[:, j] / sqrt(Var_noise(mu_j))
+
+    where:
+        mu_j = mean intensity of feature j across samples
+        Var_noise(mu_j) = expected instrument noise variance
+                          estimated from the calibration curve.
+
+    Conceptually, this corresponds to inverse noise standard-deviation
+    weighting, which equalizes the influence of features across the
+    spectrum and reduces noise bias in downstream multivariate analysis.
+
+    Compared to the full probabilistic WSoR model described in the paper,
+    this implementation uses an empirical mean–variance calibration
+    instead of explicitly modeling individual noise sources
+    (ion counting noise, detector noise, flicker noise, and signal
+    censoring). However, the resulting scaling operation is equivalent
+    to the WSoR normalization step: dividing each feature by the square
+    root of its estimated noise variance.
+
+    Parameters
+    ----------
+    curve_path : str
+        Path to a text file containing the instrument calibration curve
+        with two columns: Mean and Variance.
+
+    eps : float, default=1e-12
+        Small constant added to the variance to avoid division by zero.
+
+    Attributes
+    ----------
+    scale_ : ndarray of shape (n_features,)
+        Feature-wise scaling factors equal to 1 / sqrt(Var_noise).
+
+    details_ : dict
+        Diagnostic information including:
+        - mean_ref : reference means from calibration curve
+        - var_ref : reference variances from calibration curve
+        - mu_features : observed mean intensity per feature
+        - var_noise_features : estimated noise variance per feature
+        - scale_features : computed scaling weights
+
+    References
+    ----------
+    Keenan, M. R. et al. (2025).
+    Orbitrap noise structure and method for noise unbiased multivariate analysis.
+    Nature Communications.
     """
 
     curve_path: str
