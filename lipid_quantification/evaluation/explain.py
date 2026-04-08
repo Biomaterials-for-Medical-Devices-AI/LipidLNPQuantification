@@ -39,6 +39,17 @@ def compute_feature_attributions(
         Shape (N, n_targets * n_features).
         Columns: ``["{target_0}_{feat_0}", "{target_0}_{feat_1}", ...,
                     "{target_1}_{feat_0}", ...]``
+
+    Notes
+    -----
+    To obtain per-target attributions suitable for the visualisation functions
+    in :mod:`lipid_quantification.evaluation.explain_plots`, slice and rename
+    the columns::
+
+        target = "DSPC"
+        feat_cols = X.columns.tolist()
+        attr_df = attrs_all[[f"{target}_{f}" for f in feat_cols]].copy()
+        attr_df.columns = feat_cols   # strip target prefix
     """
     ig = IntegratedGradients(model.eval())
     cols = X.columns
